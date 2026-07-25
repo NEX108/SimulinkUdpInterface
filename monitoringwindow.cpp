@@ -1,5 +1,8 @@
 #include "monitoringwindow.h"
 #include "ui_monitoringwindow.h"
+
+#include <QVBoxLayout>
+#include <QFrame>
 #include <QVBoxLayout>
 
 MonitoringWindow::MonitoringWindow(QWidget *parent)
@@ -149,6 +152,101 @@ void MonitoringWindow::setLidarPoints(
     lidarPlot->graph(0)->setData(x, y);
 
     lidarPlot->replot();
+}
+
+void MonitoringWindow::setRuntimeValues(
+    double steeringActual,
+    double motorActual,
+    double steeringSetpoint,
+    double motorSetpoint)
+{
+    ui->labelSteeringActualValue->setText(
+        QStringLiteral("%1 norm")
+            .arg(steeringActual, 0, 'f', 3)
+        );
+
+    ui->labelMotorActualValue->setText(
+        QStringLiteral("%1 RPM")
+            .arg(motorActual, 0, 'f', 3)
+        );
+
+    ui->labelSteeringSetpointValue->setText(
+        QStringLiteral("%1 norm")
+            .arg(steeringSetpoint, 0, 'f', 3)
+        );
+
+    ui->labelMotorSetpointValue->setText(
+        QStringLiteral("%1 norm")
+            .arg(motorSetpoint, 0, 'f', 3)
+        );
+}
+
+void MonitoringWindow::clearDiagnosticValues()
+{
+    for (QWidget *card : diagnosticCards)
+    {
+        ui->diagnosticsGrid->removeWidget(card);
+        delete card;
+    }
+
+    diagnosticCards.clear();
+}
+
+void MonitoringWindow::setDiagnosticValues(
+    const QVector<DiagnosticValue> &diagnostics)
+{
+    clearDiagnosticValues();
+
+    constexpr int columnCount = 2;
+
+    for (int index = 0; index < diagnostics.size(); ++index)
+    {
+        const DiagnosticValue &diagnostic = diagnostics.at(index);
+
+        const int gridRow = index / columnCount;
+        const int gridColumn = index % columnCount;
+
+        auto *card = new QFrame(ui->diagnosticsContainer);
+        card->setFrameShape(QFrame::StyledPanel);
+        card->setFrameShadow(QFrame::Plain);
+        card->setMinimumHeight(75);
+
+        auto *cardLayout = new QVBoxLayout(card);
+        cardLayout->setContentsMargins(10, 8, 10, 8);
+        cardLayout->setSpacing(4);
+
+        auto *nameLabel = new QLabel(diagnostic.name, card);
+        nameLabel->setAlignment(Qt::AlignCenter);
+
+        QString valueText = QString::number(
+            diagnostic.value,
+            'f',
+            3
+            );
+
+        if (!diagnostic.unit.isEmpty())
+        {
+            valueText += QStringLiteral(" ");
+            valueText += diagnostic.unit;
+        }
+
+        auto *valueLabel = new QLabel(valueText, card);
+        valueLabel->setAlignment(Qt::AlignCenter);
+
+        cardLayout->addWidget(nameLabel);
+        cardLayout->addWidget(valueLabel);
+
+        ui->diagnosticsGrid->addWidget(
+            card,
+            gridRow,
+            gridColumn
+            );
+
+        diagnosticCards.append(card);
+    }
+
+    ui->diagnosticsGrid->setColumnStretch(0, 1);
+    ui->diagnosticsGrid->setColumnStretch(1, 1);
 }
 
 MonitoringWindow::~MonitoringWindow()

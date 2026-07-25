@@ -2,12 +2,22 @@
 #define MONITORINGWINDOW_H
 
 #include <QDialog>
-#include "qcustomplot.h"
+#include <QLabel>
+#include <QVector>
+#include <QString>
+
 #include "qcustomplot.h"
 
 namespace Ui {
 class MonitoringWindow;
 }
+
+struct DiagnosticValue
+{
+    QString name;
+    QString unit;
+    double value;
+};
 
 class MonitoringWindow : public QDialog
 {
@@ -21,12 +31,23 @@ public:
         const QVector<double>& x,
         const QVector<double>& y);
 
-private:
-    Ui::MonitoringWindow *ui;
+    void setRuntimeValues(
+        double steeringActual,
+        double motorActual,
+        double steeringSetpoint,
+        double motorSetpoint);
 
+    void setDiagnosticValues(
+        const QVector<DiagnosticValue> &diagnostics);
+
+private:
+    void constrainLidarPlotRange();
+    void clearDiagnosticValues();
+
+    Ui::MonitoringWindow *ui;
     QCustomPlot *lidarPlot = nullptr;
 
-    void constrainLidarPlotRange();
+    QVector<QWidget *> diagnosticCards;
 };
 
 #endif // MONITORINGWINDOW_H

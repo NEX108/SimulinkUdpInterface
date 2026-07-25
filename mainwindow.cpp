@@ -683,6 +683,41 @@ MainWindow::MainWindow(QWidget *parent)
 
             monitoringWindow->setLidarPoints(lidarX, lidarY);
 
+            monitoringWindow->setRuntimeValues(
+                0.125,   // steering ist
+                0.040,   // motor ist
+                -0.200,  // steering soll
+                0.100    // motor soll
+                );
+
+            QVector<DiagnosticValue> diagnostics;
+
+            diagnostics.append({
+                QStringLiteral("Geschwindigkeit"),
+                QStringLiteral("m/s"),
+                1.250
+            });
+
+            diagnostics.append({
+                QStringLiteral("Phase"),
+                QString(),
+                2.0
+            });
+
+            diagnostics.append({
+                QStringLiteral("Motor normiert"),
+                QStringLiteral("norm"),
+                0.120
+            });
+
+            diagnostics.append({
+                QStringLiteral("Lenkung normiert"),
+                QStringLiteral("norm"),
+                -0.300
+            });
+
+            monitoringWindow->setDiagnosticValues(diagnostics);
+
             ui->statusBar->showMessage(
                 QStringLiteral("Live-Monitor geöffnet.")
                 );
