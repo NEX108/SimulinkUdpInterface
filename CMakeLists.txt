@@ -34,6 +34,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         monitoringwindow.cpp
         qcustomplot.cpp
         qcustomplot.h
+        algorithmruntime.h algorithmruntime.cpp
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET SimulinkUdpInterface APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR

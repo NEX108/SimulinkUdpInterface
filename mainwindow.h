@@ -2,17 +2,16 @@
 #define MAINWINDOW_H
 
 #include <QJsonArray>
-#include <QLibrary>
 #include <QList>
 #include <QMainWindow>
 #include <QString>
-#include <QTimer>
 
 class QComboBox;
 class QLineEdit;
 class QTableWidget;
 class QWidget;
 class MonitoringWindow;
+class AlgorithmRuntime;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -54,10 +53,6 @@ private:
         QComboBox *comboSignal = nullptr;
         QLineEdit *editUnit = nullptr;
     };
-
-    using InitializeFunction = void (*)();
-    using StepFunction = void (*)();
-    using TerminateFunction = void (*)();
 
     void selectAlgorithmPackage();
     void invalidateValidation();
@@ -105,35 +100,18 @@ private:
         const QList<SignalInfo> &signalList
         ) const;
 
-    bool loadAlgorithmLibrary(
-        QString &errorMessage
-        );
-
-    bool validateAlgorithmLibrary(
-        QStringList &errors
-        );
-
     Ui::MainWindow *ui;
 
     MonitoringWindow *monitoringWindow = nullptr;
+    AlgorithmRuntime *algorithmRuntime = nullptr;
 
     QString algorithmPackagePath;
     QString algorithmLibraryPath;
     QString algorithmModelName;
 
-    QLibrary algorithmLibrary;
-
     QList<SignalInfo> inputSignals;
     QList<SignalInfo> outputSignals;
     QList<MonitoringRow> monitoringRows;
-
-    InitializeFunction initializeFunction = nullptr;
-    StepFunction stepFunction = nullptr;
-    TerminateFunction terminateFunction = nullptr;
-
-    QTimer algorithmTimer;
-    quint64 algorithmStepCount = 0;
-    bool algorithmRunning = false;
 };
 
 #endif // MAINWINDOW_H

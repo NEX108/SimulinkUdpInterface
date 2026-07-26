@@ -2,6 +2,7 @@
 #include "ui_mainwindow.h"
 #include "validationdialog.h"
 #include "monitoringwindow.h"
+#include "algorithmruntime.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -31,36 +32,41 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-
-    /*
-     * Laufzeittimer
-     * 20 ms entsprechen 50 Hz.
-     */
-    algorithmTimer.setInterval(20);
+    algorithmRuntime = new AlgorithmRuntime(this);
 
     connect(
-        &algorithmTimer,
-        &QTimer::timeout,
+        algorithmRuntime,
+        &AlgorithmRuntime::stepCompleted,
         this,
-        [this]()
+        [this](quint64 stepCount)
         {
-            if (!stepFunction) {
-                return;
-            }
-
-            stepFunction();
-            ++algorithmStepCount;
-
-            // Statusanzeige nur ungefähr einmal pro Sekunde aktualisieren.
-            if (algorithmStepCount % 50 == 0) {
+            /*
+         * Statusanzeige ungefähr einmal pro Sekunde
+         * aktualisieren.
+         */
+            if (stepCount % 50 == 0) {
                 ui->statusBar->showMessage(
                     QStringLiteral(
                         "Algorithmus läuft – Schritte: %1"
-                    ).arg(algorithmStepCount)
-                );
+                        ).arg(stepCount)
+                    );
             }
         }
-    );
+        );
+
+    connect(
+        algorithmRuntime,
+        &AlgorithmRuntime::runtimeError,
+        this,
+        [this](const QString &message)
+        {
+            QMessageBox::critical(
+                this,
+                QStringLiteral("Runtime-Fehler"),
+                message
+                );
+        }
+        );
 
     /*
      * Algorithmuspaket laden
@@ -119,7 +125,7 @@ MainWindow::MainWindow(QWidget *parent)
              */
             QStringList libraryErrors;
 
-            validateAlgorithmLibrary(libraryErrors);
+            algorithmRuntime->validate(libraryErrors);
 
             for (const QString &error : libraryErrors) {
                 data.errors.append(error);
@@ -142,7 +148,6 @@ MainWindow::MainWindow(QWidget *parent)
                 const QString unit =
                     row.editUnit->text().trimmed();
 
-                // Vollständig leere Zeilen werden ignoriert.
                 // Vollständig leere Zeilen werden ignoriert.
                 if (displayName.isEmpty()
                     && signalName.isEmpty()
@@ -517,13 +522,7 @@ MainWindow::MainWindow(QWidget *parent)
             ui->buttonStart->setEnabled(validationAccepted);
 
             if (!validationAccepted) {
-                initializeFunction = nullptr;
-                stepFunction = nullptr;
-                terminateFunction = nullptr;
-
-                if (algorithmLibrary.isLoaded()) {
-                    algorithmLibrary.unload();
-                }
+                algorithmRuntime->unload();
             }
         }
         );
@@ -537,28 +536,17 @@ MainWindow::MainWindow(QWidget *parent)
         this,
         [this]()
         {
-            if (!algorithmLibrary.isLoaded()
-                || !initializeFunction
-                || !stepFunction
-                || !terminateFunction) {
+            QString errorMessage;
+
+            if (!algorithmRuntime->start(errorMessage)) {
                 QMessageBox::critical(
                     this,
                     QStringLiteral("Start fehlgeschlagen"),
-                    QStringLiteral(
-                        "Die Algorithmusbibliothek ist nicht "
-                        "vollständig geladen.\n"
-                        "Bitte erneut validieren."
-                        )
+                    errorMessage
                     );
+
                 return;
             }
-
-            algorithmStepCount = 0;
-
-            initializeFunction();
-
-            algorithmRunning = true;
-            algorithmTimer.start();
 
             ui->statusBar->showMessage(
                 QStringLiteral(
@@ -580,21 +568,16 @@ MainWindow::MainWindow(QWidget *parent)
         this,
         [this]()
         {
-            algorithmTimer.stop();
+            algorithmRuntime->stop();
 
-            if (algorithmRunning && terminateFunction) {
-                terminateFunction();
-            }
+            const quint64 stepCount =
+                algorithmRuntime->stepCount();
 
-            algorithmRunning = false;
-
-            initializeFunction = nullptr;
-            stepFunction = nullptr;
-            terminateFunction = nullptr;
-
-            if (algorithmLibrary.isLoaded()) {
-                algorithmLibrary.unload();
-            }
+            /*
+         * Nach dem Stoppen wird die Bibliothek entladen.
+         * Für einen erneuten Start muss erneut validiert werden.
+         */
+            algorithmRuntime->unload();
 
             ui->buttonStart->setEnabled(false);
             ui->buttonStop->setEnabled(false);
@@ -602,7 +585,7 @@ MainWindow::MainWindow(QWidget *parent)
             ui->statusBar->showMessage(
                 QStringLiteral(
                     "Algorithmus gestoppt – insgesamt %1 Schritte."
-                    ).arg(algorithmStepCount)
+                    ).arg(stepCount)
                 );
         }
         );
@@ -651,6 +634,118 @@ MainWindow::MainWindow(QWidget *parent)
 
             if (!monitoringWindow) {
                 monitoringWindow = new MonitoringWindow(this);
+
+                connect(
+                    algorithmRuntime,
+                    &AlgorithmRuntime::stepCompleted,
+                    monitoringWindow,
+                    [this](quint64)
+                    {
+                        if (!monitoringWindow
+                            || !algorithmRuntime) {
+                            return;
+                        }
+
+                        const RuntimeOutputs out =
+                            algorithmRuntime->outputs();
+
+                        /*
+         * Die Istwerte sind noch Testwerte.
+         * Später stammen sie aus dem UDP-Empfang.
+         */
+                        monitoringWindow->setRuntimeValues(
+                            0.125,
+                            0.040,
+                            out.steeringSoll,
+                            out.motorSoll
+                            );
+
+                        QVector<DiagnosticValue> diagnostics;
+
+                        /*
+         * Nur die vom Benutzer konfigurierten
+         * Diagnosesignale anzeigen.
+         */
+                        for (const MonitoringRow &row : monitoringRows) {
+                            if (!row.comboSignal
+                                || row.comboSignal->currentIndex() <= 0) {
+                                continue;
+                            }
+
+                            const QString signalName =
+                                row.comboSignal->currentText();
+
+                            QString displayName;
+
+                            if (row.editName) {
+                                displayName =
+                                    row.editName->text().trimmed();
+                            }
+
+                            if (displayName.isEmpty()) {
+                                displayName = signalName;
+                            }
+
+                            QString unit;
+
+                            if (row.editUnit) {
+                                unit =
+                                    row.editUnit->text().trimmed();
+                            }
+
+                            double value = 0.0;
+                            bool signalSupported = true;
+
+                            if (signalName
+                                == QStringLiteral("lenkwinkel_soll")) {
+                                value = out.steeringSoll;
+                            }
+                            else if (signalName
+                                     == QStringLiteral("phase")) {
+                                value = out.phase;
+                            }
+                            else if (signalName
+                                     == QStringLiteral("motor_soll")) {
+                                value = out.motorSoll;
+                            }
+                            else if (signalName
+                                     == QStringLiteral("speed_mps")) {
+                                value = out.speedMps;
+                            }
+                            else if (signalName
+                                     == QStringLiteral("motor_norm")) {
+                                value =
+                                    static_cast<double>(
+                                        out.motorNorm
+                                        );
+                            }
+                            else if (signalName
+                                     == QStringLiteral("steering_norm")) {
+                                value =
+                                    static_cast<double>(
+                                        out.steeringNorm
+                                        );
+                            }
+                            else {
+                                signalSupported = false;
+                            }
+
+                            if (!signalSupported) {
+                                continue;
+                            }
+
+                            diagnostics.append({
+                                displayName,
+                                unit,
+                                value
+                            });
+                        }
+
+                        monitoringWindow->setDiagnosticValues(
+                            diagnostics
+                            );
+                    }
+                    );
             }
 
             monitoringWindow->show();
@@ -660,63 +755,138 @@ MainWindow::MainWindow(QWidget *parent)
             QVector<double> lidarX;
             QVector<double> lidarY;
 
-            //Senkrechte Wand bei x=8
-            for (double y = -6.0; y <= 0.5; y += 0.1)
-            {
+            lidarX.reserve(1601);
+            lidarY.reserve(1601);
+
+            constexpr int verticalWallPoints = 401;
+            constexpr int lowerWallPoints = 600;
+            constexpr int upperWallPoints = 600;
+
+            /*
+             * Senkrechte Wand bei x = 8 m.
+             * y läuft von -6,0 bis 0,5.
+             */
+            for (int index = 0;
+                 index < verticalWallPoints;
+                 ++index) {
+                const double ratio =
+                    static_cast<double>(index)
+                    / static_cast<double>(
+                        verticalWallPoints - 1
+                        );
+
+                const double y =
+                    -6.0 + ratio * 6.5;
+
                 lidarX.append(8.0);
                 lidarY.append(y);
             }
 
-            // Horizontale Wand bei y = -6 m
-            for (double x = -8.0; x <= 8.0; x += 0.1)
-            {
+            /*
+             * Horizontale Wand bei y = -6 m.
+             * x läuft von -8,0 bis 8,0.
+             */
+            for (int index = 0;
+                 index < lowerWallPoints;
+                 ++index) {
+                const double ratio =
+                    static_cast<double>(index)
+                    / static_cast<double>(
+                        lowerWallPoints - 1
+                        );
+
+                const double x =
+                    -8.0 + ratio * 16.0;
+
                 lidarX.append(x);
                 lidarY.append(-6.0);
             }
 
-            // Horizontale Wand bei y = 0.5 m
-            for (double x = -8.0; x <= 8.0; x += 0.1)
-            {
+            /*
+             * Horizontale Wand bei y = 0,5 m.
+             * x läuft von -8,0 bis 8,0.
+             */
+            for (int index = 0;
+                 index < upperWallPoints;
+                 ++index) {
+                const double ratio =
+                    static_cast<double>(index)
+                    / static_cast<double>(
+                        upperWallPoints - 1
+                        );
+
+                const double x =
+                    -8.0 + ratio * 16.0;
+
                 lidarX.append(x);
                 lidarY.append(0.5);
             }
 
             monitoringWindow->setLidarPoints(lidarX, lidarY);
 
+            if (algorithmRuntime)
+            {
+                algorithmRuntime->setLidarPoints(
+                    lidarX,
+                    lidarY
+                    );
+
+                algorithmRuntime->setVehicleState(
+                    0.125,  // Lenkwinkel Ist, vorerst Testwert
+                    0.040   // Motor Ist, vorerst Testwert
+                    );
+            }
+
             monitoringWindow->setRuntimeValues(
-                0.125,   // steering ist
-                0.040,   // motor ist
-                -0.200,  // steering soll
-                0.100    // motor soll
+                0.125,  // steering ist, vorerst Testwert
+                0.040,  // motor ist, vorerst Testwert
+                algorithmRuntime
+                    ? algorithmRuntime->steeringSoll()
+                    : 0.0,
+                algorithmRuntime
+                    ? algorithmRuntime->motorSoll()
+                    : 0.0
                 );
 
             QVector<DiagnosticValue> diagnostics;
 
-            diagnostics.append({
-                QStringLiteral("Geschwindigkeit"),
-                QStringLiteral("m/s"),
-                1.250
-            });
+            for (const MonitoringRow &row : monitoringRows) {
+                if (!row.comboSignal
+                    || row.comboSignal->currentIndex() <= 0) {
+                    continue;
+                }
 
-            diagnostics.append({
-                QStringLiteral("Phase"),
-                QString(),
-                2.0
-            });
+                const QString signalName =
+                    row.comboSignal->currentText();
 
-            diagnostics.append({
-                QStringLiteral("Motor normiert"),
-                QStringLiteral("norm"),
-                0.120
-            });
+                QString displayName;
 
-            diagnostics.append({
-                QStringLiteral("Lenkung normiert"),
-                QStringLiteral("norm"),
-                -0.300
-            });
+                if (row.editName) {
+                    displayName =
+                        row.editName->text().trimmed();
+                }
 
-            monitoringWindow->setDiagnosticValues(diagnostics);
+                if (displayName.isEmpty()) {
+                    displayName = signalName;
+                }
+
+                QString unit;
+
+                if (row.editUnit) {
+                    unit =
+                        row.editUnit->text().trimmed();
+                }
+
+                diagnostics.append({
+                    displayName,
+                    unit,
+                    0.0
+                });
+            }
+
+            monitoringWindow->setDiagnosticValues(
+                diagnostics
+                );
 
             ui->statusBar->showMessage(
                 QStringLiteral("Live-Monitor geöffnet.")
@@ -1253,21 +1423,7 @@ void MainWindow::selectAlgorithmPackage()
         return;
     }
 
-    algorithmTimer.stop();
-
-    if (algorithmRunning && terminateFunction) {
-        terminateFunction();
-    }
-
-    algorithmRunning = false;
-
-    initializeFunction = nullptr;
-    stepFunction = nullptr;
-    terminateFunction = nullptr;
-
-    if (algorithmLibrary.isLoaded()) {
-        algorithmLibrary.unload();
-    }
+    algorithmRuntime->unload();
 
     clearMonitoringRows();
     invalidateValidation();
@@ -1449,6 +1605,11 @@ void MainWindow::selectAlgorithmPackage()
     algorithmLibraryPath = libraryPath;
     algorithmModelName = modelName;
 
+    algorithmRuntime->configure(
+        algorithmLibraryPath,
+        algorithmModelName
+        );
+
     ui->labelAlgorithm->setText(
         QStringLiteral("Algorithmus: %1")
             .arg(algorithmModelName)
@@ -1475,138 +1636,7 @@ void MainWindow::selectAlgorithmPackage()
         );
 }
 
-
-bool MainWindow::loadAlgorithmLibrary(
-    QString &errorMessage)
-{
-    errorMessage.clear();
-
-    if (algorithmLibraryPath.isEmpty()) {
-        errorMessage =
-            QStringLiteral(
-                "Es wurde keine Bibliothek ausgewählt."
-                );
-        return false;
-    }
-
-    if (algorithmLibrary.isLoaded()) {
-        algorithmLibrary.unload();
-    }
-
-    algorithmLibrary.setFileName(
-        algorithmLibraryPath
-        );
-
-    if (!algorithmLibrary.load()) {
-        errorMessage =
-            algorithmLibrary.errorString();
-        return false;
-    }
-
-    return true;
-}
-
-
-bool MainWindow::validateAlgorithmLibrary(
-    QStringList &errors)
-{
-    errors.clear();
-
-    initializeFunction = nullptr;
-    stepFunction = nullptr;
-    terminateFunction = nullptr;
-
-    QString libraryError;
-
-    if (!loadAlgorithmLibrary(libraryError)) {
-        errors.append(
-            QStringLiteral(
-                "Algorithmusbibliothek konnte "
-                "nicht geladen werden."
-                )
-            );
-
-        return false;
-    }
-
-    const QString initializeName =
-        algorithmModelName
-        + QStringLiteral("_initialize");
-
-    const QString stepName =
-        algorithmModelName
-        + QStringLiteral("_step");
-
-    const QString terminateName =
-        algorithmModelName
-        + QStringLiteral("_terminate");
-
-    initializeFunction =
-        reinterpret_cast<InitializeFunction>(
-            algorithmLibrary.resolve(
-                initializeName
-                    .toLatin1()
-                    .constData()
-                )
-            );
-
-    if (!initializeFunction) {
-        errors.append(
-            QStringLiteral(
-                "Funktion %1 wurde nicht gefunden."
-                ).arg(initializeName)
-            );
-    }
-
-    stepFunction =
-        reinterpret_cast<StepFunction>(
-            algorithmLibrary.resolve(
-                stepName
-                    .toLatin1()
-                    .constData()
-                )
-            );
-
-    if (!stepFunction) {
-        errors.append(
-            QStringLiteral(
-                "Funktion %1 wurde nicht gefunden."
-                ).arg(stepName)
-            );
-    }
-
-    terminateFunction =
-        reinterpret_cast<TerminateFunction>(
-            algorithmLibrary.resolve(
-                terminateName
-                    .toLatin1()
-                    .constData()
-                )
-            );
-
-    if (!terminateFunction) {
-        errors.append(
-            QStringLiteral(
-                "Funktion %1 wurde nicht gefunden."
-                ).arg(terminateName)
-            );
-    }
-
-    return errors.isEmpty();
-}
-
-
 MainWindow::~MainWindow()
 {
-    algorithmTimer.stop();
-
-    if (algorithmRunning && terminateFunction) {
-        terminateFunction();
-    }
-
-    if (algorithmLibrary.isLoaded()) {
-        algorithmLibrary.unload();
-    }
-
     delete ui;
 }
