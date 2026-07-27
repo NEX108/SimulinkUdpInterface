@@ -26,6 +26,8 @@
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QWidget>
+#include <QHostAddress>
+#include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -60,10 +62,12 @@ MainWindow::MainWindow(QWidget *parent)
         this,
         [this](const QString &message)
         {
-            QMessageBox::critical(
-                this,
-                QStringLiteral("Runtime-Fehler"),
-                message
+            qWarning() << "Runtime-Fehler:" << message;
+
+            ui->statusBar->showMessage(
+                QStringLiteral("Runtime-Fehler: %1")
+                    .arg(message),
+                5000
                 );
         }
         );
@@ -76,7 +80,7 @@ MainWindow::MainWindow(QWidget *parent)
         &QPushButton::clicked,
         this,
         &MainWindow::selectAlgorithmPackage
-    );
+        );
 
     /*
      * Konfiguration validieren
@@ -528,17 +532,73 @@ MainWindow::MainWindow(QWidget *parent)
         );
 
     /*
-     * Algorithmus starten
-     */
+ * Algorithmus starten
+ */
     connect(
         ui->buttonStart,
         &QPushButton::clicked,
         this,
         [this]()
         {
+            UdpRuntimeConfiguration udpConfiguration;
+
+            /*
+             * LiDAR-Empfang
+             */
+            udpConfiguration.lidar.enabled =
+                ui->checkLidarReceiveEnabled->isChecked();
+
+            udpConfiguration.lidar.port =
+                static_cast<quint16>(
+                    ui->spinLidarReceivePort->value()
+                    );
+
+            /*
+             * Lenkwinkel-Ist-Empfang
+             */
+            udpConfiguration.steering.enabled =
+                ui->checkSteeringReceiveEnabled->isChecked();
+
+            udpConfiguration.steering.port =
+                static_cast<quint16>(
+                    ui->spinSteeringReceivePort->value()
+                    );
+
+            /*
+             * Motor-RPM-Empfang
+             */
+            udpConfiguration.motorRpm.enabled =
+                ui->checkMotorReceiveEnabled->isChecked();
+
+            udpConfiguration.motorRpm.port =
+                static_cast<quint16>(
+                    ui->spinMotorReceivePort->value()
+                    );
+
+            /*
+             * Gemeinsamer Steuerungssender:
+             * Lenkwinkel-Soll und Motor-Soll
+             */
+            udpConfiguration.command.enabled =
+                ui->checkCommandSendEnabled->isChecked();
+
+            udpConfiguration.command.address =
+                QHostAddress(
+                    ui->editCommandTargetIp
+                        ->text()
+                        .trimmed()
+                    );
+
+            udpConfiguration.command.port =
+                static_cast<quint16>(
+                    ui->spinCommandTargetPort->value()
+                    );
+
             QString errorMessage;
 
-            if (!algorithmRuntime->start(errorMessage)) {
+            if (!algorithmRuntime->start(
+                    udpConfiguration,
+                    errorMessage)) {
                 QMessageBox::critical(
                     this,
                     QStringLiteral("Start fehlgeschlagen"),
@@ -625,8 +685,7 @@ MainWindow::MainWindow(QWidget *parent)
             }
 
             const int row = ui->navigationList->row(item);
-
-            constexpr int liveMonitorRow = 6; //Falls sich die Navigationszeile von LiveMonitoring ändert hier auch ändern!
+            constexpr int liveMonitorRow = 6;
 
             if (row != liveMonitorRow) {
                 return;
@@ -646,91 +705,77 @@ MainWindow::MainWindow(QWidget *parent)
                             return;
                         }
 
-                        const RuntimeOutputs out =
-                            algorithmRuntime->outputs();
+                        double steeringSoll = 0.0;
+                        double motorSoll = 0.0;
+                        QString errorMessage;
+
+                        if (ui->comboSteeringOut->currentIndex() > 0) {
+                            algorithmRuntime->readOutputScalar(
+                                ui->comboSteeringOut->currentText(),
+                                steeringSoll,
+                                errorMessage
+                                );
+                        }
+
+                        errorMessage.clear();
+
+                        if (ui->comboMotorOut->currentIndex() > 0) {
+                            algorithmRuntime->readOutputScalar(
+                                ui->comboMotorOut->currentText(),
+                                motorSoll,
+                                errorMessage
+                                );
+                        }
 
                         /*
-         * Die Istwerte sind noch Testwerte.
-         * Später stammen sie aus dem UDP-Empfang.
-         */
+                         * Die Istwerte werden über die UDP-Runtime aktualisiert.
+                         */
                         monitoringWindow->setRuntimeValues(
-                            0.125,
-                            0.040,
-                            out.steeringSoll,
-                            out.motorSoll
+                            steeringActual,
+                            motorActual,
+                            steeringSoll,
+                            motorSoll
                             );
 
                         QVector<DiagnosticValue> diagnostics;
 
-                        /*
-         * Nur die vom Benutzer konfigurierten
-         * Diagnosesignale anzeigen.
-         */
-                        for (const MonitoringRow &row : monitoringRows) {
-                            if (!row.comboSignal
-                                || row.comboSignal->currentIndex() <= 0) {
+                        for (const MonitoringRow &monitoringRow
+                             : monitoringRows) {
+                            if (!monitoringRow.comboSignal
+                                || monitoringRow.comboSignal
+                                           ->currentIndex() <= 0) {
                                 continue;
                             }
 
                             const QString signalName =
-                                row.comboSignal->currentText();
+                                monitoringRow.comboSignal
+                                    ->currentText();
 
-                            QString displayName;
-
-                            if (row.editName) {
-                                displayName =
-                                    row.editName->text().trimmed();
-                            }
+                            QString displayName =
+                                monitoringRow.editName
+                                    ? monitoringRow.editName
+                                          ->text()
+                                          .trimmed()
+                                    : QString();
 
                             if (displayName.isEmpty()) {
                                 displayName = signalName;
                             }
 
-                            QString unit;
-
-                            if (row.editUnit) {
-                                unit =
-                                    row.editUnit->text().trimmed();
-                            }
+                            const QString unit =
+                                monitoringRow.editUnit
+                                    ? monitoringRow.editUnit
+                                          ->text()
+                                          .trimmed()
+                                    : QString();
 
                             double value = 0.0;
-                            bool signalSupported = true;
+                            QString readError;
 
-                            if (signalName
-                                == QStringLiteral("lenkwinkel_soll")) {
-                                value = out.steeringSoll;
-                            }
-                            else if (signalName
-                                     == QStringLiteral("phase")) {
-                                value = out.phase;
-                            }
-                            else if (signalName
-                                     == QStringLiteral("motor_soll")) {
-                                value = out.motorSoll;
-                            }
-                            else if (signalName
-                                     == QStringLiteral("speed_mps")) {
-                                value = out.speedMps;
-                            }
-                            else if (signalName
-                                     == QStringLiteral("motor_norm")) {
-                                value =
-                                    static_cast<double>(
-                                        out.motorNorm
-                                        );
-                            }
-                            else if (signalName
-                                     == QStringLiteral("steering_norm")) {
-                                value =
-                                    static_cast<double>(
-                                        out.steeringNorm
-                                        );
-                            }
-                            else {
-                                signalSupported = false;
-                            }
-
-                            if (!signalSupported) {
+                            if (!algorithmRuntime->readOutputScalar(
+                                    signalName,
+                                    value,
+                                    readError)) {
                                 continue;
                             }
 
@@ -746,147 +791,49 @@ MainWindow::MainWindow(QWidget *parent)
                             );
                     }
                     );
-            }
+
+                connect(
+                    algorithmRuntime,
+                    &AlgorithmRuntime::lidarDataUpdated,
+                    monitoringWindow,
+                    &MonitoringWindow::setLidarPoints);
+
+                connect(
+                    algorithmRuntime,
+                    &AlgorithmRuntime::steeringActualUpdated,
+                    this,
+                    [this](float value)
+                    {
+                        steeringActual =
+                            static_cast<double>(value);
+                    });
+
+                connect(
+                    algorithmRuntime,
+                    &AlgorithmRuntime::motorRpmUpdated,
+                    this,
+                    [this](float value)
+                    {
+                        motorActual =
+                            static_cast<double>(value);
+                    });
+                }
+
+            /*
+             * Bis UDP eingebaut ist, gibt es keine künstliche
+             * LiDAR-Punktwolke mehr.
+             */
+
+            monitoringWindow->setRuntimeValues(
+                0.0,
+                0.0,
+                0.0,
+                0.0
+                );
 
             monitoringWindow->show();
             monitoringWindow->raise();
             monitoringWindow->activateWindow();
-
-            QVector<double> lidarX;
-            QVector<double> lidarY;
-
-            lidarX.reserve(1601);
-            lidarY.reserve(1601);
-
-            constexpr int verticalWallPoints = 401;
-            constexpr int lowerWallPoints = 600;
-            constexpr int upperWallPoints = 600;
-
-            /*
-             * Senkrechte Wand bei x = 8 m.
-             * y läuft von -6,0 bis 0,5.
-             */
-            for (int index = 0;
-                 index < verticalWallPoints;
-                 ++index) {
-                const double ratio =
-                    static_cast<double>(index)
-                    / static_cast<double>(
-                        verticalWallPoints - 1
-                        );
-
-                const double y =
-                    -6.0 + ratio * 6.5;
-
-                lidarX.append(8.0);
-                lidarY.append(y);
-            }
-
-            /*
-             * Horizontale Wand bei y = -6 m.
-             * x läuft von -8,0 bis 8,0.
-             */
-            for (int index = 0;
-                 index < lowerWallPoints;
-                 ++index) {
-                const double ratio =
-                    static_cast<double>(index)
-                    / static_cast<double>(
-                        lowerWallPoints - 1
-                        );
-
-                const double x =
-                    -8.0 + ratio * 16.0;
-
-                lidarX.append(x);
-                lidarY.append(-6.0);
-            }
-
-            /*
-             * Horizontale Wand bei y = 0,5 m.
-             * x läuft von -8,0 bis 8,0.
-             */
-            for (int index = 0;
-                 index < upperWallPoints;
-                 ++index) {
-                const double ratio =
-                    static_cast<double>(index)
-                    / static_cast<double>(
-                        upperWallPoints - 1
-                        );
-
-                const double x =
-                    -8.0 + ratio * 16.0;
-
-                lidarX.append(x);
-                lidarY.append(0.5);
-            }
-
-            monitoringWindow->setLidarPoints(lidarX, lidarY);
-
-            if (algorithmRuntime)
-            {
-                algorithmRuntime->setLidarPoints(
-                    lidarX,
-                    lidarY
-                    );
-
-                algorithmRuntime->setVehicleState(
-                    0.125,  // Lenkwinkel Ist, vorerst Testwert
-                    0.040   // Motor Ist, vorerst Testwert
-                    );
-            }
-
-            monitoringWindow->setRuntimeValues(
-                0.125,  // steering ist, vorerst Testwert
-                0.040,  // motor ist, vorerst Testwert
-                algorithmRuntime
-                    ? algorithmRuntime->steeringSoll()
-                    : 0.0,
-                algorithmRuntime
-                    ? algorithmRuntime->motorSoll()
-                    : 0.0
-                );
-
-            QVector<DiagnosticValue> diagnostics;
-
-            for (const MonitoringRow &row : monitoringRows) {
-                if (!row.comboSignal
-                    || row.comboSignal->currentIndex() <= 0) {
-                    continue;
-                }
-
-                const QString signalName =
-                    row.comboSignal->currentText();
-
-                QString displayName;
-
-                if (row.editName) {
-                    displayName =
-                        row.editName->text().trimmed();
-                }
-
-                if (displayName.isEmpty()) {
-                    displayName = signalName;
-                }
-
-                QString unit;
-
-                if (row.editUnit) {
-                    unit =
-                        row.editUnit->text().trimmed();
-                }
-
-                diagnostics.append({
-                    displayName,
-                    unit,
-                    0.0
-                });
-            }
-
-            monitoringWindow->setDiagnosticValues(
-                diagnostics
-                );
 
             ui->statusBar->showMessage(
                 QStringLiteral("Live-Monitor geöffnet.")
@@ -1090,6 +1037,21 @@ QList<MainWindow::SignalInfo> MainWindow::readSignals(
                 );
         }
 
+        signal.elementCount =
+            static_cast<qsizetype>(
+                object.value(
+                          QStringLiteral("elementCount")
+                          ).toDouble(0.0)
+                );
+
+        if (signal.elementCount <= 0) {
+            signal.elementCount = 1;
+
+            for (const int dimension : signal.dimensions) {
+                signal.elementCount *= dimension;
+            }
+        }
+
         signal.role =
             determineSignalRole(signal, isInput);
 
@@ -1172,36 +1134,19 @@ bool MainWindow::isNumericSignal(
 }
 
 
-bool MainWindow::hasDimensions(
-    const SignalInfo &signal,
-    int rows,
-    int columns) const
-{
-    if (signal.dimensions.size() != 2) {
-        return false;
-    }
-
-    return signal.dimensions.at(0) == rows
-           && signal.dimensions.at(1) == columns;
-}
-
 
 MainWindow::SignalRole MainWindow::determineSignalRole(
     const SignalInfo &signal,
     bool isInput) const
 {
-    if (isInput) {
-        if (isNumericSignal(signal)
-            && hasDimensions(signal, 1601, 1)) {
-            return SignalRole::Lidar;
-        }
-
-        if (isNumericSignal(signal)
-            && hasDimensions(signal, 1, 1)) {
-            return SignalRole::Scalar;
-        }
-
+    if (!isNumericSignal(signal)) {
         return SignalRole::Unknown;
+    }
+
+    if (isInput) {
+        return signal.elementCount == 1
+                   ? SignalRole::Scalar
+                   : SignalRole::Lidar;
     }
 
     return SignalRole::Monitoring;
@@ -1227,8 +1172,7 @@ MainWindow::monitoringSignals(
 void MainWindow::fillSignalComboBox(
     QComboBox *comboBox,
     const QList<SignalInfo> &signalList,
-    int requiredRows,
-    int requiredColumns)
+    SignalRole requiredRole)
 {
     comboBox->clear();
 
@@ -1241,14 +1185,29 @@ void MainWindow::fillSignalComboBox(
             continue;
         }
 
-        if (!hasDimensions(
-                signal,
-                requiredRows,
-                requiredColumns)) {
-            continue;
+        bool accepted = false;
+
+        switch (requiredRole) {
+        case SignalRole::Lidar:
+            accepted = signal.elementCount > 1;
+            break;
+
+        case SignalRole::Scalar:
+            accepted = signal.elementCount == 1;
+            break;
+
+        case SignalRole::Monitoring:
+            accepted = true;
+            break;
+
+        case SignalRole::Unknown:
+            accepted = false;
+            break;
         }
 
-        comboBox->addItem(signal.name);
+        if (accepted) {
+            comboBox->addItem(signal.name);
+        }
     }
 
     comboBox->setEnabled(
@@ -1512,115 +1471,53 @@ void MainWindow::selectAlgorithmPackage()
     fillSignalComboBox(
         ui->comboLidarX,
         inputSignals,
-        1601,
-        1
+        SignalRole::Lidar
         );
 
     fillSignalComboBox(
         ui->comboLidarY,
         inputSignals,
-        1601,
-        1
+        SignalRole::Lidar
         );
 
     fillSignalComboBox(
         ui->comboSteeringIn,
         inputSignals,
-        1,
-        1
+        SignalRole::Scalar
         );
 
     fillSignalComboBox(
         ui->comboMotorIn,
         inputSignals,
-        1,
-        1
+        SignalRole::Scalar
         );
 
     fillSignalComboBox(
         ui->comboSteeringOut,
         outputSignals,
-        1,
-        1
+        SignalRole::Scalar
         );
 
     fillSignalComboBox(
         ui->comboMotorOut,
         outputSignals,
-        1,
-        1
+        SignalRole::Scalar
         );
 
-    const QString modelName =
-        manifest.value(
-                    QStringLiteral("modelName")
-                    ).toString();
+    algorithmFolder = selectedDirectory;
 
-    const QJsonObject library =
-        manifest.value(
-                    QStringLiteral("library")
-                    ).toObject();
-
-    const QString libraryFileName =
-        library.value(
-                   QStringLiteral("fileName")
-                   ).toString();
-
-    if (modelName.isEmpty()
-        || libraryFileName.isEmpty()) {
-        QMessageBox::warning(
-            this,
-            QStringLiteral(
-                "Unvollständiges Manifest"
-                ),
-            QStringLiteral(
-                "Im Manifest fehlen modelName "
-                "oder library.fileName."
-                )
-            );
-        return;
-    }
-
-    const QString libraryPath =
-        selectedDirectory
-        + QStringLiteral("/")
-        + libraryFileName;
-
-    if (!QFileInfo::exists(libraryPath)) {
-        QMessageBox::warning(
-            this,
-            QStringLiteral(
-                "Bibliothek nicht gefunden"
-                ),
-            QStringLiteral(
-                "Die im Manifest angegebene "
-                "Bibliothek wurde nicht gefunden:"
-                "\n\n%1"
-                ).arg(libraryPath)
-            );
-        return;
-    }
-
-    algorithmPackagePath = selectedDirectory;
-    algorithmLibraryPath = libraryPath;
-    algorithmModelName = modelName;
-
-    algorithmRuntime->configure(
-        algorithmLibraryPath,
-        algorithmModelName
-        );
+    algorithmRuntime->configure(algorithmFolder);
 
     ui->labelAlgorithm->setText(
         QStringLiteral("Algorithmus: %1")
-            .arg(algorithmModelName)
-        );
+            .arg(algorithmRuntime->modelName()));
 
     ui->labelAlgorithm->setToolTip(
         QStringLiteral(
             "Paket: %1\nBibliothek: %2"
             ).arg(
-                algorithmPackagePath,
-                algorithmLibraryPath
+                algorithmFolder,
+                algorithmRuntime->libraryPath()
                 )
         );
 
@@ -1631,7 +1528,7 @@ void MainWindow::selectAlgorithmPackage()
     ui->statusBar->showMessage(
         QStringLiteral(
             "Algorithmuspaket geladen: %1"
-            ).arg(algorithmPackagePath),
+            ).arg(algorithmFolder),
         5000
         );
 }

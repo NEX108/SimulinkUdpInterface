@@ -28,8 +28,8 @@ public:
     ~MonitoringWindow();
 
     void setLidarPoints(
-        const QVector<double>& x,
-        const QVector<double>& y);
+        const QVector<float> &x,
+        const QVector<float> &y);
 
     void setRuntimeValues(
         double steeringActual,

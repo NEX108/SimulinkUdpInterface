@@ -42,6 +42,7 @@ private:
         QString dataType;
         QString cType;
         QList<int> dimensions;
+        qsizetype elementCount = 0;
 
         SignalRole role = SignalRole::Unknown;
     };
@@ -74,11 +75,6 @@ private:
         const SignalInfo &signal
         ) const;
 
-    bool hasDimensions(
-        const SignalInfo &signal,
-        int rows,
-        int columns
-        ) const;
 
     QString dimensionText(
         const QList<int> &dimensions
@@ -92,8 +88,7 @@ private:
     void fillSignalComboBox(
         QComboBox *comboBox,
         const QList<SignalInfo> &signalList,
-        int requiredRows,
-        int requiredColumns
+        SignalRole requiredRole
         );
 
     QList<SignalInfo> monitoringSignals(
@@ -104,10 +99,10 @@ private:
 
     MonitoringWindow *monitoringWindow = nullptr;
     AlgorithmRuntime *algorithmRuntime = nullptr;
+    double steeringActual = 0.0;
+    double motorActual = 0.0;
 
-    QString algorithmPackagePath;
-    QString algorithmLibraryPath;
-    QString algorithmModelName;
+    QString algorithmFolder;
 
     QList<SignalInfo> inputSignals;
     QList<SignalInfo> outputSignals;

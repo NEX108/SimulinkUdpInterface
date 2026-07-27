@@ -3,7 +3,8 @@
 
 #include <QVBoxLayout>
 #include <QFrame>
-#include <QVBoxLayout>
+#include <algorithm>
+#include <cmath>
 
 MonitoringWindow::MonitoringWindow(QWidget *parent)
     : QDialog(parent)
@@ -143,15 +144,44 @@ void MonitoringWindow::constrainLidarPlotRange()
 }
 
 void MonitoringWindow::setLidarPoints(
-    const QVector<double> &x,
-    const QVector<double> &y)
+    const QVector<float> &x,
+    const QVector<float> &y)
 {
-    if (!lidarPlot->graphCount())
+    if (!lidarPlot || lidarPlot->graphCount() == 0) {
         return;
+    }
 
-    lidarPlot->graph(0)->setData(x, y);
+    const qsizetype pointCount =
+        std::min(x.size(), y.size());
 
-    lidarPlot->replot();
+    QVector<double> plotX;
+    QVector<double> plotY;
+
+    plotX.reserve(pointCount);
+    plotY.reserve(pointCount);
+
+    for (qsizetype i = 0; i < pointCount; ++i) {
+        const float xValue = x.at(i);
+        const float yValue = y.at(i);
+
+        /*
+         * Ungültige LiDAR-Punkte nicht an QCustomPlot übergeben.
+         */
+        if (!std::isfinite(xValue)
+            || !std::isfinite(yValue)) {
+            continue;
+        }
+
+        plotX.append(static_cast<double>(xValue));
+        plotY.append(static_cast<double>(yValue));
+    }
+
+    lidarPlot->graph(0)->setData(
+        plotX,
+        plotY);
+
+    lidarPlot->replot(
+        QCustomPlot::rpQueuedReplot);
 }
 
 void MonitoringWindow::setRuntimeValues(
