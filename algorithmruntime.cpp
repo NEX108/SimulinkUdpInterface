@@ -1183,34 +1183,89 @@ QByteArray AlgorithmRuntime::createOutputPacket(
 {
     errorMessage.clear();
 
-    QByteArray packet;
-    packet.resize(expectedOutputPacketSize());
+    double steeringSetpoint = 0.0;
+    double motorSetpoint = 0.0;
 
-    qsizetype packetOffset = 0;
+    if (!readOutputScalar(
+            m_udpConfiguration.steeringOutputSignal,
+            steeringSetpoint,
+            errorMessage)) {
 
-    for (const SignalBinding &binding :
-         m_outputBindings) {
+        errorMessage =
+            QStringLiteral(
+                "Lenkwinkel-Soll konnte für das "
+                "UDP-Paket nicht gelesen werden: %1")
+                .arg(errorMessage);
 
-        if (!binding.address) {
-            errorMessage =
-                QStringLiteral(
-                    "Für Ausgangssignal \"%1\" existiert "
-                    "keine gültige Speicherbindung.")
-                    .arg(binding.descriptor.name);
-
-            return QByteArray{};
-        }
-
-        const qsizetype byteSize =
-            binding.descriptor.byteSize;
-
-        std::memcpy(
-            packet.data() + packetOffset,
-            binding.address,
-            static_cast<std::size_t>(byteSize));
-
-        packetOffset += byteSize;
+        return QByteArray{};
     }
+
+    errorMessage.clear();
+
+    if (!readOutputScalar(
+            m_udpConfiguration.motorOutputSignal,
+            motorSetpoint,
+            errorMessage)) {
+
+        errorMessage =
+            QStringLiteral(
+                "Motor-Soll konnte für das "
+                "UDP-Paket nicht gelesen werden: %1")
+                .arg(errorMessage);
+
+        return QByteArray{};
+    }
+
+    /*
+     * Werte auf den normierten Steuerbereich begrenzen.
+     */
+    const double limitedSteering =
+        std::clamp(
+            steeringSetpoint,
+            -1.0,
+            1.0);
+
+    const double limitedMotor =
+        std::clamp(
+            motorSetpoint,
+            -1.0,
+            1.0);
+
+    constexpr int packetSize = 32;
+
+    QByteArray packet(
+        packetSize,
+        '\0');
+
+    const QByteArray command =
+        QStringLiteral(
+            "CTRL,%1,%2,%3")
+            .arg(
+                limitedSteering,
+                0,
+                'f',
+                3)
+            .arg(
+                limitedMotor,
+                0,
+                'f',
+                3)
+            .arg(
+                0.0,
+                0,
+                'f',
+                3)
+            .toLatin1();
+
+    const qsizetype copySize =
+        std::min(
+            static_cast<qsizetype>(packetSize),
+            command.size());
+
+    std::memcpy(
+        packet.data(),
+        command.constData(),
+        static_cast<std::size_t>(copySize));
 
     return packet;
 }
@@ -1539,6 +1594,53 @@ void AlgorithmRuntime::executeCycle()
             emit lidarDataUpdated(
                 lidarData.x,
                 lidarData.y);
+
+            QString lidarWriteError;
+
+            /*
+             * QVector<float> als Rohdaten an die Simulink-Eingänge
+             * übertragen. Die ausgewählten Eingangssignale müssen
+             * Single-Arrays mit passender Größe sein.
+             */
+            const QByteArray lidarXBytes(
+                reinterpret_cast<const char *>(
+                    lidarData.x.constData()),
+                static_cast<qsizetype>(
+                    lidarData.x.size() * sizeof(float))
+                );
+
+            if (!writeInputBytes(
+                    m_udpConfiguration.lidarXInputSignal,
+                    lidarXBytes,
+                    lidarWriteError)) {
+
+                emit runtimeError(
+                    QStringLiteral(
+                        "LiDAR-X konnte nicht in den Algorithmus "
+                        "geschrieben werden: %1")
+                        .arg(lidarWriteError));
+            }
+
+            lidarWriteError.clear();
+
+            const QByteArray lidarYBytes(
+                reinterpret_cast<const char *>(
+                    lidarData.y.constData()),
+                static_cast<qsizetype>(
+                    lidarData.y.size() * sizeof(float))
+                );
+
+            if (!writeInputBytes(
+                    m_udpConfiguration.lidarYInputSignal,
+                    lidarYBytes,
+                    lidarWriteError)) {
+
+                emit runtimeError(
+                    QStringLiteral(
+                        "LiDAR-Y konnte nicht in den Algorithmus "
+                        "geschrieben werden: %1")
+                        .arg(lidarWriteError));
+            }
         }
         else {
             emit runtimeError(
@@ -1562,7 +1664,7 @@ void AlgorithmRuntime::executeCycle()
             QString writeError;
 
             if (writeInputScalar(
-                    QStringLiteral("lenkwinkel_ist"),
+                    m_udpConfiguration.steeringInputSignal,
                     static_cast<double>(steeringActual),
                     writeError)) {
 
@@ -1573,7 +1675,8 @@ void AlgorithmRuntime::executeCycle()
                 qDebug()
                     << "Lenkwinkel Ist:"
                     << steeringActual
-                    << "→ lenkwinkel_ist";
+                    << "→"
+                    << m_udpConfiguration.steeringInputSignal;
             }
             else {
                 emit runtimeError(
@@ -1605,7 +1708,7 @@ void AlgorithmRuntime::executeCycle()
             QString writeError;
 
             if (writeInputScalar(
-                    QStringLiteral("motor_ist"),
+                    m_udpConfiguration.motorInputSignal,
                     static_cast<double>(motorRpm),
                     writeError)) {
 
@@ -1616,7 +1719,8 @@ void AlgorithmRuntime::executeCycle()
                 qDebug()
                     << "Motor RPM:"
                     << motorRpm
-                    << "→ motor_ist";
+                    << "→"
+                    << m_udpConfiguration.motorInputSignal;
             }
             else {
                 emit runtimeError(
@@ -1648,6 +1752,50 @@ void AlgorithmRuntime::executeCycle()
 
     ++m_currentStepCount;
     ++m_statistics.algorithmExecutions;
+
+    double steeringSetpoint = 0.0;
+    double motorSetpoint = 0.0;
+
+    QString outputReadError;
+
+    const bool steeringOutputValid =
+        readOutputScalar(
+            m_udpConfiguration.steeringOutputSignal,
+            steeringSetpoint,
+            outputReadError);
+
+    if (!steeringOutputValid) {
+        emit runtimeError(
+            QStringLiteral(
+                "Lenkwinkel-Soll konnte nicht gelesen werden: %1")
+                .arg(outputReadError));
+    }
+
+    outputReadError.clear();
+
+    const bool motorOutputValid =
+        readOutputScalar(
+            m_udpConfiguration.motorOutputSignal,
+            motorSetpoint,
+            outputReadError);
+
+    if (!motorOutputValid) {
+        emit runtimeError(
+            QStringLiteral(
+                "Motor-Soll konnte nicht gelesen werden: %1")
+                .arg(outputReadError));
+    }
+
+    if (steeringOutputValid
+        && motorOutputValid) {
+
+        qDebug()
+        << "Algorithmus-Ausgänge:"
+        << "Lenkwinkel Soll ="
+        << steeringSetpoint
+        << "| Motor Soll ="
+        << motorSetpoint;
+    }
 
     /*
      * Nur senden, wenn der gemeinsame Steuerungssender

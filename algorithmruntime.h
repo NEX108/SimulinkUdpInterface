@@ -65,6 +65,17 @@ struct UdpRuntimeConfiguration
     UdpReceiveConfiguration motorRpm;
 
     UdpSendConfiguration command;
+
+    /*
+     * Zuordnung zwischen UDP-Kanälen und Simulink-Signalen.
+     */
+    QString lidarXInputSignal;
+    QString lidarYInputSignal;
+    QString steeringInputSignal;
+    QString motorInputSignal;
+
+    QString steeringOutputSignal;
+    QString motorOutputSignal;
 };
 
 struct DecodedLidarData

@@ -594,6 +594,39 @@ MainWindow::MainWindow(QWidget *parent)
                     ui->spinCommandTargetPort->value()
                     );
 
+            /*
+             * Ausgewählte Simulink-Signalzuordnungen
+             */
+            udpConfiguration.lidarXInputSignal =
+                ui->comboLidarX->currentIndex() > 0
+                    ? ui->comboLidarX->currentText()
+                    : QString();
+
+            udpConfiguration.lidarYInputSignal =
+                ui->comboLidarY->currentIndex() > 0
+                    ? ui->comboLidarY->currentText()
+                    : QString();
+
+            udpConfiguration.steeringInputSignal =
+                ui->comboSteeringIn->currentIndex() > 0
+                    ? ui->comboSteeringIn->currentText()
+                    : QString();
+
+            udpConfiguration.motorInputSignal =
+                ui->comboMotorIn->currentIndex() > 0
+                    ? ui->comboMotorIn->currentText()
+                    : QString();
+
+            udpConfiguration.steeringOutputSignal =
+                ui->comboSteeringOut->currentIndex() > 0
+                    ? ui->comboSteeringOut->currentText()
+                    : QString();
+
+            udpConfiguration.motorOutputSignal =
+                ui->comboMotorOut->currentIndex() > 0
+                    ? ui->comboMotorOut->currentText()
+                    : QString();
+
             QString errorMessage;
 
             if (!algorithmRuntime->start(
