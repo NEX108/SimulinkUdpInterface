@@ -1595,6 +1595,12 @@ void AlgorithmRuntime::executeCycle()
                 lidarData.x,
                 lidarData.y);
 
+            emit lidarLogData(
+                packet.size(),
+                lidarData.numberOfRanges,
+                m_udpConfiguration.lidar.port
+                );
+
             QString lidarWriteError;
 
             /*
@@ -1672,6 +1678,12 @@ void AlgorithmRuntime::executeCycle()
 
                 emit steeringActualUpdated(steeringActual);
 
+                emit steeringActualLogData(
+                    packet.size(),
+                    steeringActual,
+                    m_udpConfiguration.steering.port
+                    );
+
                 qDebug()
                     << "Lenkwinkel Ist:"
                     << steeringActual
@@ -1715,6 +1727,12 @@ void AlgorithmRuntime::executeCycle()
                 ++m_statistics.packetsReceived;
 
                 emit motorRpmUpdated(motorRpm);
+
+                emit motorActualLogData(
+                    packet.size(),
+                    motorRpm,
+                    m_udpConfiguration.motorRpm.port
+                    );
 
                 qDebug()
                     << "Motor RPM:"
@@ -1856,6 +1874,13 @@ void AlgorithmRuntime::executeCycle()
                         sendError)) {
 
                     ++m_statistics.packetsSent;
+
+                    emit commandLogData(
+                        outputPacket.size(),
+                        steeringSetpoint,
+                        motorSetpoint,
+                        m_udpConfiguration.command.port
+                        );
                 }
                 else {
                     emit runtimeError(sendError);

@@ -258,16 +258,6 @@
          </item>
          <item>
           <property name="text">
-           <string>Parameter</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>Debug</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
            <string>Live-Monitor</string>
           </property>
          </item>
@@ -279,6 +269,11 @@
          <item>
           <property name="text">
            <string>Logs</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>Debug</string>
           </property>
          </item>
         </widget>
@@ -298,9 +293,22 @@
           </size>
          </property>
          <property name="currentIndex">
-          <number>3</number>
+          <number>6</number>
          </property>
-         <widget class="QWidget" name="overviewPage"/>
+         <widget class="QWidget" name="overviewPage">
+          <layout class="QVBoxLayout" name="verticalLayout">
+           <item>
+            <widget class="QTextBrowser" name="overviewTextBrowser">
+             <property name="frameShape">
+              <enum>QFrame::Shape::NoFrame</enum>
+             </property>
+             <property name="verticalScrollBarPolicy">
+              <enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOff</enum>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
          <widget class="QWidget" name="inputsPage">
           <layout class="QVBoxLayout" name="verticalLayout_5">
            <item>
@@ -1508,10 +1516,127 @@
            </item>
           </layout>
          </widget>
-         <widget class="QWidget" name="parametersPage"/>
-         <widget class="QWidget" name="debugPage"/>
          <widget class="QWidget" name="liveMonitorPage"/>
-         <widget class="QWidget" name="logsPage"/>
+         <widget class="QWidget" name="recordsPage"/>
+         <widget class="QWidget" name="logsPage">
+          <layout class="QVBoxLayout" name="verticalLayout_2">
+           <item>
+            <widget class="QGroupBox" name="groupLogSettings">
+             <property name="minimumSize">
+              <size>
+               <width>0</width>
+               <height>80</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>16777215</width>
+               <height>100</height>
+              </size>
+             </property>
+             <property name="title">
+              <string>Log-Einstellungen</string>
+             </property>
+             <layout class="QGridLayout" name="gridLayout">
+              <item row="0" column="0">
+               <widget class="QCheckBox" name="checkLidarLog">
+                <property name="text">
+                 <string>LiDAR</string>
+                </property>
+                <property name="checked">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item row="0" column="1">
+               <widget class="QCheckBox" name="checkMotorActualLog">
+                <property name="text">
+                 <string>Motor Ist</string>
+                </property>
+                <property name="checked">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item row="0" column="2">
+               <widget class="QCheckBox" name="checkSteeringActualLog">
+                <property name="text">
+                 <string>Lenkwinkel Ist</string>
+                </property>
+                <property name="checked">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item row="1" column="0">
+               <widget class="QCheckBox" name="checkCommandLog">
+                <property name="text">
+                 <string>Steuerung Soll</string>
+                </property>
+                <property name="checked">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item row="1" column="1" colspan="2">
+               <layout class="QHBoxLayout" name="horizontalLayout_3">
+                <item>
+                 <widget class="QLabel" name="labelLogFrequency">
+                  <property name="text">
+                   <string>Log-Frequenz</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QSpinBox" name="spinLogFrequency">
+                  <property name="suffix">
+                   <string> Hz</string>
+                  </property>
+                  <property name="minimum">
+                   <number>1</number>
+                  </property>
+                  <property name="maximum">
+                   <number>20</number>
+                  </property>
+                  <property name="value">
+                   <number>10</number>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPlainTextEdit" name="plainTextLog">
+             <property name="verticalScrollBarPolicy">
+              <enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOff</enum>
+             </property>
+             <property name="lineWrapMode">
+              <enum>QPlainTextEdit::LineWrapMode::NoWrap</enum>
+             </property>
+             <property name="readOnly">
+              <bool>true</bool>
+             </property>
+             <property name="maximumBlockCount">
+              <number>5000</number>
+             </property>
+             <property name="placeholderText">
+              <string>Noch keine Log-Einträge vorhanden.</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="buttonClearLogs">
+             <property name="text">
+              <string>Log leeren</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="debugPage"/>
         </widget>
        </item>
       </layout>

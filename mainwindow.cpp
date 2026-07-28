@@ -28,13 +28,203 @@
 #include <QWidget>
 #include <QHostAddress>
 #include <QDebug>
+#include <QTextBrowser>
+#include <QTextCursor>
+#include <QPlainTextEdit>
+#include <QDateTime>
+#include <QScrollBar>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+
+    initializeOverviewPage();
+
     algorithmRuntime = new AlgorithmRuntime(this);
+
+    logTimer.start();
+
+    connect(
+        ui->buttonClearLogs,
+        &QPushButton::clicked,
+        this,
+        [this]()
+        {
+            ui->plainTextLog->clear();
+
+            /*
+         * Auch die Frequenzzeitpunkte zurücksetzen.
+         * Der nächste eingehende Wert darf dadurch
+         * sofort wieder angezeigt werden.
+         */
+            lastLogTimes.clear();
+            logTimer.restart();
+        }
+        );
+
+    appendLog(
+        QStringLiteral("SYSTEM Tool geöffnet"),
+        {
+            QStringLiteral("Log-Frequenz: %1 Hz")
+            .arg(ui->spinLogFrequency->value())
+        }
+        );
+
+    connect(
+        algorithmRuntime,
+        &AlgorithmRuntime::lidarLogData,
+        this,
+        [this](
+            qsizetype byteCount,
+            quint32 pointCount,
+            quint16 port)
+        {
+            if (!ui->checkLidarLog->isChecked()) {
+                return;
+            }
+
+            if (!shouldWriteDynamicLog(
+                    QStringLiteral("lidar"))) {
+                return;
+            }
+
+            appendLog(
+                QStringLiteral("RX LiDAR"),
+                {
+                    QStringLiteral(
+                        "Port: %1 | Bytes: %2 | Punkte: %3"
+                        )
+                        .arg(port)
+                        .arg(byteCount)
+                        .arg(pointCount)
+                }
+                );
+        }
+        );
+
+    connect(
+        algorithmRuntime,
+        &AlgorithmRuntime::motorActualLogData,
+        this,
+        [this](
+            qsizetype byteCount,
+            float value,
+            quint16 port)
+        {
+            if (!ui->checkMotorActualLog->isChecked()) {
+                return;
+            }
+
+            if (!shouldWriteDynamicLog(
+                    QStringLiteral("motorActual"))) {
+                return;
+            }
+
+            appendLog(
+                QStringLiteral("RX Motor Ist"),
+                {
+                    QStringLiteral(
+                        "Port: %1 | Bytes: %2 | Wert: %3"
+                        )
+                        .arg(port)
+                        .arg(byteCount)
+                        .arg(
+                            static_cast<double>(value),
+                            0,
+                            'f',
+                            3
+                            )
+                }
+                );
+        }
+        );
+
+    connect(
+        algorithmRuntime,
+        &AlgorithmRuntime::steeringActualLogData,
+        this,
+        [this](
+            qsizetype byteCount,
+            float value,
+            quint16 port)
+        {
+            if (!ui->checkSteeringActualLog->isChecked()) {
+                return;
+            }
+
+            if (!shouldWriteDynamicLog(
+                    QStringLiteral("steeringActual"))) {
+                return;
+            }
+
+            appendLog(
+                QStringLiteral("RX Lenkwinkel Ist"),
+                {
+                    QStringLiteral(
+                        "Port: %1 | Bytes: %2 | Wert: %3"
+                        )
+                        .arg(port)
+                        .arg(byteCount)
+                        .arg(
+                            static_cast<double>(value),
+                            0,
+                            'f',
+                            3
+                            )
+                }
+                );
+        }
+        );
+
+    connect(
+        algorithmRuntime,
+        &AlgorithmRuntime::commandLogData,
+        this,
+        [this](
+            qsizetype byteCount,
+            double steeringSetpoint,
+            double motorSetpoint,
+            quint16 port)
+        {
+            if (!ui->checkCommandLog->isChecked()) {
+                return;
+            }
+
+            if (!shouldWriteDynamicLog(
+                    QStringLiteral("command"))) {
+                return;
+            }
+
+            appendLog(
+                QStringLiteral("TX Steuerung Soll"),
+                {
+                    QStringLiteral(
+                        "Port: %1 | Bytes: %2"
+                        )
+                        .arg(port)
+                        .arg(byteCount),
+
+                    QStringLiteral(
+                        "Lenkwinkel Soll: %1 | Motor Soll: %2"
+                        )
+                        .arg(
+                            steeringSetpoint,
+                            0,
+                            'f',
+                            3
+                            )
+                        .arg(
+                            motorSetpoint,
+                            0,
+                            'f',
+                            3
+                            )
+                }
+                );
+        }
+        );
 
     connect(
         algorithmRuntime,
@@ -68,6 +258,13 @@ MainWindow::MainWindow(QWidget *parent)
                 QStringLiteral("Runtime-Fehler: %1")
                     .arg(message),
                 5000
+                );
+
+            appendLog(
+                QStringLiteral("ERROR Runtime-Fehler"),
+                {
+                    message
+                }
                 );
         }
         );
@@ -525,6 +722,11 @@ MainWindow::MainWindow(QWidget *parent)
 
             ui->buttonStart->setEnabled(validationAccepted);
 
+            logValidationResult(
+                data,
+                validationAccepted
+                );
+
             if (!validationAccepted) {
                 algorithmRuntime->unload();
             }
@@ -647,8 +849,35 @@ MainWindow::MainWindow(QWidget *parent)
                     errorMessage
                     );
 
+                appendLog(
+                    QStringLiteral("ERROR Ausführung konnte nicht gestartet werden"),
+                    {
+                        errorMessage
+                    }
+                    );
+
                 return;
             }
+
+            appendLog(
+                QStringLiteral("SYSTEM Ausführung gestartet"),
+                {
+                    QStringLiteral("Log-Frequenz: %1 Hz")
+                    .arg(ui->spinLogFrequency->value()),
+
+                        QStringLiteral("LiDAR-Port: %1")
+                            .arg(ui->spinLidarReceivePort->value()),
+
+                        QStringLiteral("Motor-Ist-Port: %1")
+                            .arg(ui->spinMotorReceivePort->value()),
+
+                        QStringLiteral("Lenkwinkel-Ist-Port: %1")
+                            .arg(ui->spinSteeringReceivePort->value()),
+
+                        QStringLiteral("Command-Port: %1")
+                            .arg(ui->spinCommandTargetPort->value())
+                }
+                );
 
             ui->statusBar->showMessage(
                 QStringLiteral(
@@ -689,6 +918,14 @@ MainWindow::MainWindow(QWidget *parent)
                     "Algorithmus gestoppt – insgesamt %1 Schritte."
                     ).arg(stepCount)
                 );
+
+            appendLog(
+                QStringLiteral("SYSTEM Ausführung gestoppt"),
+                {
+                    QStringLiteral("Algorithmusschritte: %1")
+                    .arg(stepCount)
+                }
+                );
         }
         );
 
@@ -710,26 +947,29 @@ MainWindow::MainWindow(QWidget *parent)
         ui->inputsPage,
         ui->outputsPage,
         ui->monitoringPage,
-        ui->debugPage,
-        ui->parametersPage,
         ui->liveMonitorPage,
-        ui->logsPage
+        ui->recordsPage,
+        ui->logsPage,
+        ui->debugPage
     };
 
     connect(
         ui->navigationList,
         &QListWidget::itemClicked,
         this,
-        [this](QListWidgetItem *item)
+        [this, pages](QListWidgetItem *item)
         {
             if (!item) {
                 return;
             }
 
             const int row = ui->navigationList->row(item);
-            constexpr int liveMonitorRow = 6;
 
-            if (row != liveMonitorRow) {
+            if (row < 0 || row >= pages.size()) {
+                return;
+            }
+
+            if (pages.at(row) != ui->liveMonitorPage) {
                 return;
             }
 
@@ -903,19 +1143,20 @@ MainWindow::MainWindow(QWidget *parent)
                 return;
             }
 
-            constexpr int liveMonitorRow = 6; //Falls sich die Navigationszeile von LiveMonitoring ändert hier auch ändern!
+            QWidget *selectedPage = pages.at(row);
 
-            if (row == liveMonitorRow) {
+            /*
+         * Der Live-Monitor wird als separates Fenster geöffnet
+         * und nicht im QStackedWidget angezeigt.
+         */
+            if (selectedPage == ui->liveMonitorPage) {
                 return;
             }
 
-            ui->contentStack->setCurrentWidget(
-                pages.at(row)
-                );
+            ui->contentStack->setCurrentWidget(selectedPage);
 
             if (const QListWidgetItem *item =
                 ui->navigationList->item(row)) {
-
                 ui->statusBar->showMessage(
                     QStringLiteral("Seite: %1")
                         .arg(item->text())
@@ -1054,6 +1295,450 @@ MainWindow::MainWindow(QWidget *parent)
         );
 }
 
+void MainWindow::logValidationResult(
+    const ValidationData &data,
+    bool accepted)
+{
+    QStringList details;
+
+    details.append(
+        QStringLiteral("Fehler: %1")
+            .arg(data.errors.size())
+        );
+
+    details.append(
+        QStringLiteral("Warnungen: %1")
+            .arg(data.warnings.size())
+        );
+
+    for (const QString &error : data.errors) {
+        details.append(
+            QStringLiteral("ERROR: %1").arg(error)
+            );
+    }
+
+    for (const QString &warning : data.warnings) {
+        details.append(
+            QStringLiteral("WARNING: %1").arg(warning)
+            );
+    }
+
+    for (const QString &input : data.inputs) {
+        details.append(
+            QStringLiteral("Eingang: %1").arg(input)
+            );
+    }
+
+    for (const QString &output : data.outputs) {
+        details.append(
+            QStringLiteral("Ausgang: %1").arg(output)
+            );
+    }
+
+    for (const QString &monitoring : data.monitoring) {
+        details.append(
+            QStringLiteral("Diagnose: %1").arg(monitoring)
+            );
+    }
+
+    appendLog(
+        accepted
+            ? QStringLiteral("VALIDATION erfolgreich")
+            : QStringLiteral("VALIDATION fehlgeschlagen"),
+        details
+        );
+}
+
+void MainWindow::initializeOverviewPage()
+{
+    /*
+     * Der QTextBrowser dient ausschließlich als statische
+     * Informations- und Hilfeseite.
+     */
+    ui->overviewTextBrowser->setReadOnly(true);
+    ui->overviewTextBrowser->setOpenExternalLinks(false);
+
+    /*
+     * Optische Anpassung des äußeren QTextBrowser-Widgets.
+     * Der eigentliche Inhalt wird weiter unten über HTML gestaltet.
+     */
+    ui->overviewTextBrowser->setStyleSheet(
+        QStringLiteral(
+            "QTextBrowser {"
+            "    background-color: transparent;"
+            "    border: none;"
+            "    padding: 0px;"
+            "}"
+            )
+        );
+
+    const QString overviewHtml = QStringLiteral(R"(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+
+    <style>
+        body {
+            font-family: "Segoe UI", "Arial", sans-serif;
+            font-size: 10.5pt;
+            line-height: 1.55;
+            color: #263238;
+            background-color: transparent;
+            margin: 22px 30px 36px 30px;
+        }
+
+        h1 {
+            font-size: 24pt;
+            font-weight: 600;
+            color: #1f2933;
+            margin-top: 0px;
+            margin-bottom: 8px;
+        }
+
+        h2 {
+            font-size: 16pt;
+            font-weight: 600;
+            color: #1f4e79;
+            margin-top: 28px;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #c8d2dc;
+        }
+
+        h3 {
+            font-size: 12.5pt;
+            font-weight: 600;
+            color: #263238;
+            margin-top: 20px;
+            margin-bottom: 6px;
+        }
+
+        p {
+            margin-top: 5px;
+            margin-bottom: 10px;
+        }
+
+        ul {
+            margin-top: 6px;
+            margin-bottom: 12px;
+            margin-left: 18px;
+        }
+
+        li {
+            margin-bottom: 4px;
+        }
+
+        .intro {
+            font-size: 11.5pt;
+            color: #455a64;
+            margin-bottom: 12px;
+        }
+
+        .workflow-step {
+            background-color: #f5f7f9;
+            border: 1px solid #dce3e8;
+            border-radius: 5px;
+            margin-top: 10px;
+            margin-bottom: 12px;
+            padding: 10px 14px;
+        }
+
+        .workflow-step h3 {
+            color: #1f4e79;
+            margin-top: 0px;
+        }
+
+        .signal-flow {
+            background-color: #eef4f8;
+            border: 1px solid #cbd9e3;
+            border-radius: 5px;
+            margin-top: 10px;
+            padding: 16px;
+            text-align: center;
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: 10.5pt;
+            color: #263238;
+        }
+
+        .arrow {
+            color: #1f4e79;
+            font-size: 14pt;
+            font-weight: bold;
+        }
+
+        .notice {
+            background-color: #fff8e1;
+            border: 1px solid #e4d49b;
+            border-radius: 5px;
+            margin-top: 12px;
+            padding: 12px 14px;
+        }
+
+        .value-box {
+            background-color: #f5f7f9;
+            border: 1px solid #d5dde3;
+            border-radius: 4px;
+            margin-top: 8px;
+            margin-bottom: 8px;
+            padding: 9px 12px;
+            font-family: "Consolas", "Courier New", monospace;
+            font-weight: bold;
+            color: #1f4e79;
+        }
+
+        .footer-note {
+            color: #546e7a;
+            margin-top: 14px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Übersicht</h1>
+
+    <p class="intro">
+        Dieses Tool dient zur Integration und Ausführung von
+        Steuerungs- und Fahrerassistenzalgorithmen, die in
+        MATLAB/Simulink entwickelt wurden.
+    </p>
+
+    <p>
+        Die Algorithmen können zunächst mit einem virtuellen Fahrzeug
+        in Unreal Engine 5 getestet und anschließend für den Betrieb
+        auf dem realen RC-Fahrzeug verwendet werden.
+    </p>
+
+    <h2>Typischer Arbeitsablauf</h2>
+
+    <div class="workflow-step">
+        <h3>1. Simulink-Algorithmus entwickeln</h3>
+
+        <p>
+            Der Algorithmus wird in einem Simulink-Modell erstellt.
+            Als Eingänge können beispielsweise LiDAR-Daten,
+            Lenkwinkel oder Motordrehzahl verwendet werden.
+        </p>
+
+        <p>
+            Als Ausgänge werden die Sollwerte für Lenkung und Antrieb
+            sowie optional weitere Diagnosesignale definiert.
+        </p>
+    </div>
+
+    <div class="workflow-step">
+        <h3>2. Code generieren</h3>
+
+        <p>
+            Das Simulink-Modell wird mit Simulink Coder als
+            C- oder C++-Bibliothek erzeugt. Die generierten Dateien
+            werden anschließend als Algorithmuspaket in dieses Tool
+            geladen.
+        </p>
+    </div>
+
+    <div class="workflow-step">
+        <h3>3. Signale zuordnen</h3>
+
+        <p>
+            Nach dem Laden des Algorithmus müssen die erkannten
+            Ein- und Ausgänge den jeweiligen Funktionen des Tools
+            zugeordnet werden.
+        </p>
+
+        <ul>
+            <li>LiDAR-X- und LiDAR-Y-Daten</li>
+            <li>Lenkwinkel-Istwert</li>
+            <li>Motor-Istwert</li>
+            <li>Lenkwinkel-Sollwert</li>
+            <li>Motor-Sollwert</li>
+            <li>optionale Diagnosesignale</li>
+        </ul>
+    </div>
+
+    <div class="workflow-step">
+        <h3>4. Konfiguration validieren</h3>
+
+        <p>
+            Vor der Ausführung prüft das Tool, ob die Bibliothek
+            geladen werden kann und ob alle erforderlichen Signale
+            vollständig und eindeutig zugeordnet wurden.
+        </p>
+
+        <p>
+            Fehler und Hinweise werden vor dem Start in einer
+            Validierungsübersicht angezeigt.
+        </p>
+    </div>
+
+    <div class="workflow-step">
+        <h3>5. Simulation starten</h3>
+
+        <p>
+            Der Algorithmus wird mit der Unreal-Engine-Simulation
+            verbunden. Die simulierten Sensordaten werden an den
+            Algorithmus übergeben. Seine berechneten Ausgangswerte
+            werden anschließend an das virtuelle Fahrzeug gesendet.
+        </p>
+    </div>
+
+    <div class="workflow-step">
+        <h3>6. Verhalten überwachen</h3>
+
+        <p>
+            Im Live-Monitor können während der Ausführung unter
+            anderem folgende Informationen betrachtet werden:
+        </p>
+
+        <ul>
+            <li>aktuelle LiDAR-Punktwolke</li>
+            <li>skalare Eingangssignale</li>
+            <li>berechnete Lenk- und Motorsollwerte</li>
+            <li>ausgewählte Diagnosesignale</li>
+        </ul>
+    </div>
+
+    <h2>Signalfluss der Simulation</h2>
+
+    <div class="signal-flow">
+        <strong>Unreal Engine 5</strong><br>
+        <span class="arrow">↓</span><br>
+        Simulierte Sensordaten<br>
+        <span class="arrow">↓</span><br>
+        Geladener Simulink-Algorithmus<br>
+        <span class="arrow">↓</span><br>
+        Lenk- und Motor-Sollwerte<br>
+        <span class="arrow">↓</span><br>
+        <strong>Virtuelles Fahrzeug</strong>
+    </div>
+
+    <p class="footer-note">
+        Beim späteren Einsatz am realen Fahrzeug werden die
+        simulierten Sensoren und Aktoren durch die reale
+        Fahrzeugschnittstelle ersetzt.
+    </p>
+
+    <h2>Wichtige Hinweise</h2>
+
+    <div class="notice">
+        <p>
+            Der Algorithmus muss in jedem Ausführungsschritt gültige
+            Ausgangswerte bereitstellen. Lenk- und Motorwerte müssen
+            innerhalb der vorgesehenen Wertebereiche liegen.
+        </p>
+
+        <p>
+            Die Begrenzung der Ausgangswerte durch das Tool ersetzt
+            keine korrekte Regelungs- und Sicherheitslogik innerhalb
+            des Algorithmus.
+        </p>
+    </div>
+
+    <h3>Notbremsfunktion</h3>
+
+    <p>
+        Eine Notbremsfunktion setzt den Motor-Sollwert auf den
+        für das System definierten neutralen Wert:
+    </p>
+
+    <div class="value-box">
+        Motor-Sollwert 0 = neutral beziehungsweise bremsen
+    </div>
+
+    <p>
+        Ein zugehöriges Diagnosesignal kann beispielsweise anzeigen,
+        ob die Notbremsung derzeit aktiv ist:
+    </p>
+
+    <div class="value-box">
+        emergency_active: 0 = inaktiv, 1 = aktiv
+    </div>
+
+    <div class="notice">
+        <strong>Sicherheitshinweis:</strong>
+
+        <p>
+            Vor dem Einsatz am realen Fahrzeug sollte ein Algorithmus
+            vollständig in der Simulation geprüft werden.
+        </p>
+    </div>
+
+</body>
+</html>
+)");
+
+    ui->overviewTextBrowser->setHtml(overviewHtml);
+
+    /*
+     * Nach dem Einfügen des Inhalts an den Seitenanfang springen.
+     */
+    ui->overviewTextBrowser->moveCursor(
+        QTextCursor::Start
+        );
+}
+
+void MainWindow::appendLog(
+    const QString &title,
+    const QStringList &details)
+{
+    const QString timestamp =
+        QDateTime::currentDateTime()
+            .toString(QStringLiteral("HH:mm:ss.zzz"));
+
+    QString entry =
+        QStringLiteral("[%1] %2")
+            .arg(timestamp, title);
+
+    for (const QString &detail : details) {
+        if (!detail.trimmed().isEmpty()) {
+            entry += QStringLiteral("\n%1").arg(detail);
+        }
+    }
+
+    ui->plainTextLog->appendPlainText(entry);
+    ui->plainTextLog->appendPlainText(QString());
+
+    /*
+     * Automatisch zum neuesten Eintrag scrollen.
+     */
+    QScrollBar *scrollBar =
+        ui->plainTextLog->verticalScrollBar();
+
+    scrollBar->setValue(scrollBar->maximum());
+}
+
+bool MainWindow::shouldWriteDynamicLog(
+    const QString &category)
+{
+    if (!logTimer.isValid()) {
+        logTimer.start();
+    }
+
+    const int frequencyHz =
+        qMax(1, ui->spinLogFrequency->value());
+
+    const qint64 minimumIntervalMs =
+        1000 / frequencyHz;
+
+    const qint64 currentTimeMs =
+        logTimer.elapsed();
+
+    const qint64 lastTimeMs =
+        lastLogTimes.value(category, -minimumIntervalMs);
+
+    if (currentTimeMs - lastTimeMs
+        < minimumIntervalMs) {
+        return false;
+    }
+
+    lastLogTimes.insert(
+        category,
+        currentTimeMs
+        );
+
+    return true;
+}
 
 QList<MainWindow::SignalInfo> MainWindow::readSignals(
     const QJsonArray &array,

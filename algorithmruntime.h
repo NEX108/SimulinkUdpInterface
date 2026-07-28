@@ -167,6 +167,27 @@ signals:
         const QVector<float> &y);
     void steeringActualUpdated(float value);
     void motorRpmUpdated(float value);
+    void lidarLogData(
+        qsizetype byteCount,
+        quint32 pointCount,
+        quint16 port
+        );
+    void motorActualLogData(
+        qsizetype byteCount,
+        float value,
+        quint16 port
+        );
+    void steeringActualLogData(
+        qsizetype byteCount,
+        float value,
+        quint16 port
+        );
+    void commandLogData(
+        qsizetype byteCount,
+        double steeringSetpoint,
+        double motorSetpoint,
+        quint16 port
+        );
 
 private:
     using InitializeFunction = void (*)();

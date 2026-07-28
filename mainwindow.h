@@ -5,6 +5,8 @@
 #include <QList>
 #include <QMainWindow>
 #include <QString>
+#include <QElapsedTimer>
+#include <QHash>
 
 class QComboBox;
 class QLineEdit;
@@ -12,6 +14,8 @@ class QTableWidget;
 class QWidget;
 class MonitoringWindow;
 class AlgorithmRuntime;
+
+#include "validationdialog.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -55,8 +59,19 @@ private:
         QLineEdit *editUnit = nullptr;
     };
 
+    void appendLog(
+        const QString &title,
+        const QStringList &details = {}
+        );
+
+    void logValidationResult(
+        const ValidationData &data,
+        bool accepted
+        );
+
     void selectAlgorithmPackage();
     void invalidateValidation();
+    void initializeOverviewPage();
 
     void addMonitoringSignalRow();
     void clearMonitoringRows();
@@ -103,10 +118,18 @@ private:
         const QList<SignalInfo> &signalList
         ) const;
 
+    bool shouldWriteDynamicLog(
+        const QString &category
+        );
+
     Ui::MainWindow *ui;
 
     MonitoringWindow *monitoringWindow = nullptr;
     AlgorithmRuntime *algorithmRuntime = nullptr;
+
+    QElapsedTimer logTimer;
+    QHash<QString, qint64> lastLogTimes;
+
     double steeringActual = 0.0;
     double motorActual = 0.0;
 
