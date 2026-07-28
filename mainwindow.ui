@@ -293,7 +293,7 @@
           </size>
          </property>
          <property name="currentIndex">
-          <number>6</number>
+          <number>5</number>
          </property>
          <widget class="QWidget" name="overviewPage">
           <layout class="QVBoxLayout" name="verticalLayout">
@@ -1517,7 +1517,325 @@
           </layout>
          </widget>
          <widget class="QWidget" name="liveMonitorPage"/>
-         <widget class="QWidget" name="recordsPage"/>
+         <widget class="QWidget" name="recordsPage">
+          <layout class="QVBoxLayout" name="verticalLayout_4">
+           <item>
+            <widget class="QGroupBox" name="groupRecording">
+             <property name="title">
+              <string>Aufzeichnung</string>
+             </property>
+             <layout class="QVBoxLayout" name="verticalLayout_8">
+              <item>
+               <widget class="QCheckBox" name="checkRecordingEnabled">
+                <property name="text">
+                 <string>Aufzeichnung aktivieren</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="textRecordingDescription">
+                <property name="text">
+                 <string>Die ausgewählten Signale werden ab dem Start der Simulation
+automatisch in CSV-Dateien aufgezeichnet. Beim Stoppen wird
+die Aufzeichnung beendet.</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+                <property name="textInteractionFlags">
+                 <set>Qt::TextInteractionFlag::NoTextInteraction</set>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QGroupBox" name="groupRecordedSignals">
+             <property name="title">
+              <string>Aufzuzeichnende Signale</string>
+             </property>
+             <layout class="QHBoxLayout" name="horizontalLayout_5">
+              <item>
+               <widget class="QGroupBox" name="groupRecordedInputs">
+                <property name="title">
+                 <string>Eingänge</string>
+                </property>
+                <layout class="QVBoxLayout" name="verticalLayout_17">
+                 <item>
+                  <widget class="QCheckBox" name="checkRecordSteeringActual">
+                   <property name="enabled">
+                    <bool>true</bool>
+                   </property>
+                   <property name="text">
+                    <string>Lenkwinkel Ist</string>
+                   </property>
+                   <property name="checked">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QCheckBox" name="checkRecordMotorActual">
+                   <property name="text">
+                    <string>Motor Ist</string>
+                   </property>
+                   <property name="checked">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QCheckBox" name="checkRecordLidar">
+                   <property name="text">
+                    <string>LiDAR</string>
+                   </property>
+                   <property name="checked">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QGroupBox" name="groupRecordedOutputs">
+                <property name="title">
+                 <string>Ausgänge</string>
+                </property>
+                <layout class="QVBoxLayout" name="verticalLayout_18">
+                 <item>
+                  <widget class="QCheckBox" name="checkRecordSteeringSetpoint">
+                   <property name="text">
+                    <string>Lenkwinkel Soll</string>
+                   </property>
+                   <property name="checked">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QCheckBox" name="checkRecordMotorSetpoint">
+                   <property name="text">
+                    <string>Motor Soll</string>
+                   </property>
+                   <property name="checked">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QGroupBox" name="groupRecordedDiagnostics">
+                <property name="title">
+                 <string>Diagnosesignale</string>
+                </property>
+                <layout class="QVBoxLayout" name="verticalLayout_19">
+                 <item>
+                  <widget class="QWidget" name="diagnosticsRecordedContainer" native="true">
+                   <layout class="QVBoxLayout" name="verticalLayout_21">
+                    <property name="spacing">
+                     <number>0</number>
+                    </property>
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="bottomMargin">
+                     <number>0</number>
+                    </property>
+                    <item>
+                     <layout class="QVBoxLayout" name="layoutRecordedDiagnostics"/>
+                    </item>
+                   </layout>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QGroupBox" name="groupRecordingSettings">
+             <property name="maximumSize">
+              <size>
+               <width>16777215</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="title">
+              <string>Aufzeichnungseinstellungen</string>
+             </property>
+             <layout class="QVBoxLayout" name="verticalLayout_20">
+              <item>
+               <layout class="QHBoxLayout" name="horizontalLayout_4">
+                <item>
+                 <widget class="QLabel" name="labelRecordingFrequency">
+                  <property name="text">
+                   <string>Aufzeichnungsfrequenz</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QSpinBox" name="spinRecordingFrequency">
+                  <property name="suffix">
+                   <string> Hz</string>
+                  </property>
+                  <property name="minimum">
+                   <number>1</number>
+                  </property>
+                  <property name="maximum">
+                   <number>20</number>
+                  </property>
+                  <property name="value">
+                   <number>10</number>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <widget class="QLabel" name="textRecordingFrequencyDescription">
+                <property name="text">
+                 <string>Die eingestellte Frequenz bestimmt, wie oft die aktuellen Signalwerte in die CSV-Datei geschrieben werden.</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+                <property name="textInteractionFlags">
+                 <set>Qt::TextInteractionFlag::NoTextInteraction</set>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QGroupBox" name="groupRecordingStorage">
+             <property name="title">
+              <string>Speichern</string>
+             </property>
+             <layout class="QVBoxLayout" name="verticalLayout_22">
+              <property name="spacing">
+               <number>0</number>
+              </property>
+              <item>
+               <layout class="QHBoxLayout" name="layoutRecordingPath">
+                <item>
+                 <widget class="QLabel" name="labelRecordingPath">
+                  <property name="text">
+                   <string>Speicherort</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLineEdit" name="editRecordingPath">
+                  <property name="text">
+                   <string>Kein Speicherort ausgewählt</string>
+                  </property>
+                  <property name="readOnly">
+                   <bool>true</bool>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="buttonSelectRecordingPath">
+                  <property name="text">
+                   <string>Auswählen</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <layout class="QHBoxLayout" name="layoutRecordingFilename">
+                <item>
+                 <widget class="QLabel" name="labelRecordingFilename">
+                  <property name="text">
+                   <string>Dateiname</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLineEdit" name="editRecordingFilename">
+                  <property name="text">
+                   <string>simulation_YYYY-MM-DD_HH-mm-ss</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="buttonResetFilename">
+                  <property name="text">
+                   <string>Zurücksetzen</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <layout class="QHBoxLayout" name="layoutMainFilePreview">
+                <item>
+                 <widget class="QLabel" name="labelMainFilePreviewTitle">
+                  <property name="text">
+                   <string>Hauptdatei</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="textMainFilePreview">
+                  <property name="text">
+                   <string>simulation_YYYY-MM-DD_HH-mm-ss.csv</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+                  </property>
+                  <property name="textInteractionFlags">
+                   <set>Qt::TextInteractionFlag::LinksAccessibleByMouse|Qt::TextInteractionFlag::TextSelectableByMouse</set>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <layout class="QHBoxLayout" name="layoutLidarFilePreview">
+                <item>
+                 <widget class="QLabel" name="labelLidarFilePreviewTitle">
+                  <property name="text">
+                   <string>LiDAR-Datei</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="textLidarFilePreview">
+                  <property name="text">
+                   <string>simulation_YYYY-MM-DD_HH-mm-ss_lidar.csv</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
+                  </property>
+                  <property name="textInteractionFlags">
+                   <set>Qt::TextInteractionFlag::LinksAccessibleByMouse|Qt::TextInteractionFlag::TextSelectableByMouse</set>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
+           </item>
+          </layout>
+         </widget>
          <widget class="QWidget" name="logsPage">
           <layout class="QVBoxLayout" name="verticalLayout_2">
            <item>
