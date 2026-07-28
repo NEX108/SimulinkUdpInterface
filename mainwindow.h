@@ -91,6 +91,11 @@ private:
         SignalRole requiredRole
         );
 
+    void fillCommandEnableComboBox(
+        QComboBox *comboBox,
+        const QList<SignalInfo> &signalList
+        );
+
     QList<SignalInfo> monitoringSignals(
         const QList<SignalInfo> &signalList
         ) const;

@@ -76,6 +76,14 @@ struct UdpRuntimeConfiguration
 
     QString steeringOutputSignal;
     QString motorOutputSignal;
+
+    /*
+     * Optionales Bool-Ausgangssignal, das das
+     * Senden der Steuerbefehle freigibt.
+     *
+     * Leerer String bedeutet: immer senden.
+     */
+    QString commandEnableSignal;
 };
 
 struct DecodedLidarData

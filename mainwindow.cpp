@@ -627,6 +627,15 @@ MainWindow::MainWindow(QWidget *parent)
                     ? ui->comboMotorOut->currentText()
                     : QString();
 
+            /*
+             * Index 0 entspricht "Immer senden".
+             * In diesem Fall bleibt der Signalname leer.
+             */
+            udpConfiguration.commandEnableSignal =
+                ui->comboCommandEnable->currentIndex() > 0
+                    ? ui->comboCommandEnable->currentText()
+                    : QString();
+
             QString errorMessage;
 
             if (!algorithmRuntime->start(
@@ -950,6 +959,13 @@ MainWindow::MainWindow(QWidget *parent)
         &MainWindow::invalidateValidation
         );
 
+    connect(
+        ui->comboCommandEnable,
+        &QComboBox::currentIndexChanged,
+        this,
+        &MainWindow::invalidateValidation
+        );
+
     /*
      * Änderungen an UDP-Ports
      */
@@ -1248,6 +1264,54 @@ void MainWindow::fillSignalComboBox(
         );
 }
 
+void MainWindow::fillCommandEnableComboBox(
+    QComboBox *comboBox,
+    const QList<SignalInfo> &signalList)
+{
+    comboBox->clear();
+
+    /*
+     * Index 0 bedeutet:
+     * Das UDP-Steuerpaket wird in jedem Zyklus gesendet.
+     */
+    comboBox->addItem(
+        QStringLiteral("Immer senden")
+        );
+
+    /*
+     * Nur skalare Bool-Ausgänge anbieten.
+     */
+    for (const SignalInfo &signal : signalList) {
+        const bool isBoolean =
+            signal.dataType.compare(
+                QStringLiteral("boolean"),
+                Qt::CaseInsensitive) == 0
+            || signal.dataType.compare(
+                   QStringLiteral("bool"),
+                   Qt::CaseInsensitive) == 0
+            || signal.cType.compare(
+                   QStringLiteral("boolean_T"),
+                   Qt::CaseInsensitive) == 0
+            || signal.cType.compare(
+                   QStringLiteral("bool"),
+                   Qt::CaseInsensitive) == 0;
+
+        if (!isBoolean) {
+            continue;
+        }
+
+        if (signal.elementCount != 1) {
+            continue;
+        }
+
+        comboBox->addItem(signal.name);
+    }
+
+    /*
+     * "Immer senden" steht immer zur Verfügung.
+     */
+    comboBox->setEnabled(true);
+}
 
 void MainWindow::addMonitoringSignalRow()
 {
@@ -1535,6 +1599,11 @@ void MainWindow::selectAlgorithmPackage()
         ui->comboMotorOut,
         outputSignals,
         SignalRole::Scalar
+        );
+
+    fillCommandEnableComboBox(
+        ui->comboCommandEnable,
+        outputSignals
         );
 
     algorithmFolder = selectedDirectory;

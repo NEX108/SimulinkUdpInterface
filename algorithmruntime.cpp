@@ -1798,29 +1798,68 @@ void AlgorithmRuntime::executeCycle()
     }
 
     /*
-     * Nur senden, wenn der gemeinsame Steuerungssender
-     * über die Checkbox aktiviert wurde.
-     */
+ * Zunächst prüfen, ob der gemeinsame Steuerungssender
+ * über die Checkbox aktiviert wurde.
+ */
     if (m_udpConfiguration.command.enabled) {
-        QString outputError;
+        bool commandSendAllowed = true;
 
-        const QByteArray outputPacket =
-            createOutputPacket(outputError);
+        /*
+     * Ein leerer Signalname bedeutet:
+     * In jedem Zyklus senden.
+     *
+     * Wurde ein Bool-Ausgang ausgewählt, entscheidet
+     * dessen aktueller Wert über das Senden.
+     */
+        if (!m_udpConfiguration.commandEnableSignal.isEmpty()) {
+            double enableValue = 0.0;
+            QString enableReadError;
 
-        if (!outputError.isEmpty()) {
-            emit runtimeError(outputError);
+            const bool enableReadSuccessful =
+                readOutputScalar(
+                    m_udpConfiguration.commandEnableSignal,
+                    enableValue,
+                    enableReadError);
+
+            /*
+         * Für den aktuellen Entwicklungsstand wird bei einem
+         * nicht lesbaren Signal nicht gesendet. Eine eigene
+         * detaillierte Fehlerbehandlung kann später ergänzt werden.
+         */
+            commandSendAllowed =
+                enableReadSuccessful
+                && enableValue != 0.0;
+
+            qDebug()
+                << "Command Enable:"
+                << m_udpConfiguration.commandEnableSignal
+                << "="
+                << enableValue
+                << "| UDP senden:"
+                << commandSendAllowed;
         }
-        else if (!outputPacket.isEmpty()) {
-            QString sendError;
 
-            if (m_commandUdp.sendPacket(
-                    outputPacket,
-                    sendError)) {
+        if (commandSendAllowed) {
+            QString outputError;
 
-                ++m_statistics.packetsSent;
+            const QByteArray outputPacket =
+                createOutputPacket(outputError);
+
+            if (!outputError.isEmpty()) {
+                emit runtimeError(outputError);
             }
-            else {
-                emit runtimeError(sendError);
+            else if (!outputPacket.isEmpty()) {
+                QString sendError;
+
+                if (m_commandUdp.sendPacket(
+                        outputPacket,
+                        sendError)) {
+
+                    ++m_statistics.packetsSent;
+                }
+                else {
+                    emit runtimeError(sendError);
+                }
             }
         }
     }
