@@ -248,11 +248,20 @@ void MonitoringWindow::setDiagnosticValues(
         auto *nameLabel = new QLabel(diagnostic.name, card);
         nameLabel->setAlignment(Qt::AlignCenter);
 
-        QString valueText = QString::number(
-            diagnostic.value,
-            'f',
-            3
-            );
+        QString valueText;
+
+        if (diagnostic.isBoolean) {
+            valueText =
+                diagnostic.value != 0.0
+                    ? QStringLiteral("1")
+                    : QStringLiteral("0");
+        } else {
+            valueText = QString::number(
+                diagnostic.value,
+                'f',
+                3
+                );
+        }
 
         if (!diagnostic.unit.isEmpty())
         {

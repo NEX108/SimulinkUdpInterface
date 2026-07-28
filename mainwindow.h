@@ -75,6 +75,9 @@ private:
         const SignalInfo &signal
         ) const;
 
+    bool isBooleanSignal(
+        const SignalInfo &signal
+        ) const;
 
     QString dimensionText(
         const QList<int> &dimensions

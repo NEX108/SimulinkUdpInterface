@@ -821,10 +821,20 @@ MainWindow::MainWindow(QWidget *parent)
                                 continue;
                             }
 
+                            bool signalIsBoolean = false;
+
+                            for (const SignalInfo &signal : outputSignals) {
+                                if (signal.name == signalName) {
+                                    signalIsBoolean = isBooleanSignal(signal);
+                                    break;
+                                }
+                            }
+
                             diagnostics.append({
                                 displayName,
                                 unit,
-                                value
+                                value,
+                                signalIsBoolean
                             });
                         }
 
@@ -1182,23 +1192,59 @@ bool MainWindow::isNumericSignal(
         || signal.dataType == QStringLiteral("uint32");
 }
 
-
+bool MainWindow::isBooleanSignal(
+    const SignalInfo &signal) const
+{
+    return signal.dataType.compare(
+               QStringLiteral("boolean"),
+               Qt::CaseInsensitive) == 0
+           || signal.dataType.compare(
+                  QStringLiteral("bool"),
+                  Qt::CaseInsensitive) == 0
+           || signal.cType.compare(
+                  QStringLiteral("boolean_T"),
+                  Qt::CaseInsensitive) == 0
+           || signal.cType.compare(
+                  QStringLiteral("bool"),
+                  Qt::CaseInsensitive) == 0;
+}
 
 MainWindow::SignalRole MainWindow::determineSignalRole(
     const SignalInfo &signal,
     bool isInput) const
 {
-    if (!isNumericSignal(signal)) {
-        return SignalRole::Unknown;
-    }
-
+    /*
+     * Eingänge für LiDAR, Lenkwinkel und Motor müssen weiterhin
+     * numerisch sein. Boolean-Eingänge werden hier nicht angeboten.
+     */
     if (isInput) {
+        if (!isNumericSignal(signal)) {
+            return SignalRole::Unknown;
+        }
+
         return signal.elementCount == 1
                    ? SignalRole::Scalar
                    : SignalRole::Lidar;
     }
 
-    return SignalRole::Monitoring;
+    /*
+     * Diagnosesignale dürfen numerische Skalare oder Boolean-Skalare sein.
+     */
+    if (signal.elementCount == 1
+        && (isNumericSignal(signal)
+            || isBooleanSignal(signal))) {
+        return SignalRole::Monitoring;
+    }
+
+    /*
+     * Auch numerische Ausgangsvektoren bleiben grundsätzlich
+     * als Monitoring-Ausgänge bekannt.
+     */
+    if (isNumericSignal(signal)) {
+        return SignalRole::Monitoring;
+    }
+
+    return SignalRole::Unknown;
 }
 
 
@@ -1282,21 +1328,7 @@ void MainWindow::fillCommandEnableComboBox(
      * Nur skalare Bool-Ausgänge anbieten.
      */
     for (const SignalInfo &signal : signalList) {
-        const bool isBoolean =
-            signal.dataType.compare(
-                QStringLiteral("boolean"),
-                Qt::CaseInsensitive) == 0
-            || signal.dataType.compare(
-                   QStringLiteral("bool"),
-                   Qt::CaseInsensitive) == 0
-            || signal.cType.compare(
-                   QStringLiteral("boolean_T"),
-                   Qt::CaseInsensitive) == 0
-            || signal.cType.compare(
-                   QStringLiteral("bool"),
-                   Qt::CaseInsensitive) == 0;
-
-        if (!isBoolean) {
+        if (!isBooleanSignal(signal)) {
             continue;
         }
 

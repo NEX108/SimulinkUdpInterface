@@ -16,7 +16,8 @@ struct DiagnosticValue
 {
     QString name;
     QString unit;
-    double value;
+    double value = 0.0;
+    bool isBoolean = false;
 };
 
 class MonitoringWindow : public QDialog
