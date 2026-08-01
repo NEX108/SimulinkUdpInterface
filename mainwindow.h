@@ -7,6 +7,7 @@
 #include <QString>
 #include <QElapsedTimer>
 #include <QHash>
+#include <QSet>
 
 class QComboBox;
 class QLineEdit;
@@ -14,6 +15,7 @@ class QTableWidget;
 class QWidget;
 class MonitoringWindow;
 class AlgorithmRuntime;
+class QCheckBox;
 
 #include "validationdialog.h"
 
@@ -122,6 +124,24 @@ private:
         const QString &category
         );
 
+    void initializeRecordingPage();
+
+    void updateRecordingPageState();
+
+    void updateRecordedDiagnostics();
+
+    void updateRecordingFilePreviews();
+
+    void resetRecordingFilename();
+
+    void selectRecordingPath();
+
+    void updateRecordSignalCheckBox(
+        QCheckBox *checkBox,
+        const QString &signalKey,
+        bool signalAvailable
+        );
+
     Ui::MainWindow *ui;
 
     MonitoringWindow *monitoringWindow = nullptr;
@@ -138,6 +158,14 @@ private:
     QList<SignalInfo> inputSignals;
     QList<SignalInfo> outputSignals;
     QList<MonitoringRow> monitoringRows;
+
+    QHash<QString, bool> recordingSignalAvailability;
+
+    QHash<QString, QCheckBox *>
+        recordedDiagnosticCheckBoxes;
+
+    QHash<QString, bool>
+        recordedDiagnosticSelections;
 };
 
 #endif // MAINWINDOW_H

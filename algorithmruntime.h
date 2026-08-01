@@ -58,6 +58,17 @@ struct UdpSendConfiguration
     quint16 port = 0;
 };
 
+struct NeosliderSendConfiguration
+{
+    bool enabled = false;
+    QHostAddress address;
+    quint16 port = 0;
+
+    int minimum = 0;
+    int maximum = 0;
+    int tolerance = 0;
+};
+
 struct UdpRuntimeConfiguration
 {
     UdpReceiveConfiguration lidar;
@@ -65,6 +76,7 @@ struct UdpRuntimeConfiguration
     UdpReceiveConfiguration motorRpm;
 
     UdpSendConfiguration command;
+    NeosliderSendConfiguration neoslider;
 
     /*
      * Zuordnung zwischen UDP-Kanälen und Simulink-Signalen.
@@ -216,6 +228,8 @@ private:
     QByteArray createOutputPacket(
         QString &errorMessage) const;
 
+    QByteArray createNeosliderConfigurationPacket() const;
+
     qsizetype expectedInputPacketSize() const;
     qsizetype expectedOutputPacketSize() const;
 
@@ -298,6 +312,8 @@ private:
      * UDP-Senden
      */
     UdpInterface m_commandUdp;
+    UdpInterface m_neosliderConfigUdp;
+
     QByteArray m_latestUdpPacket;
 
     UdpRuntimeConfiguration m_udpConfiguration;

@@ -293,7 +293,7 @@
           </size>
          </property>
          <property name="currentIndex">
-          <number>5</number>
+          <number>4</number>
          </property>
          <widget class="QWidget" name="overviewPage">
           <layout class="QVBoxLayout" name="verticalLayout">
@@ -661,7 +661,7 @@
                      <string/>
                     </property>
                     <property name="checked">
-                     <bool>false</bool>
+                     <bool>true</bool>
                     </property>
                    </widget>
                   </item>
@@ -712,6 +712,9 @@
                   </item>
                   <item row="2" column="1">
                    <widget class="QComboBox" name="comboLidarReceiveFormat">
+                    <property name="enabled">
+                     <bool>false</bool>
+                    </property>
                     <property name="font">
                      <font>
                       <pointsize>13</pointsize>
@@ -750,6 +753,9 @@
                   </item>
                   <item row="3" column="1">
                    <widget class="QSpinBox" name="spinLidarReceiveTimeOut">
+                    <property name="enabled">
+                     <bool>false</bool>
+                    </property>
                     <property name="font">
                      <font>
                       <pointsize>13</pointsize>
@@ -807,7 +813,7 @@
                      <string/>
                     </property>
                     <property name="checked">
-                     <bool>false</bool>
+                     <bool>true</bool>
                     </property>
                    </widget>
                   </item>
@@ -858,6 +864,9 @@
                   </item>
                   <item row="2" column="1">
                    <widget class="QComboBox" name="comboSteeringReceiveFormat">
+                    <property name="enabled">
+                     <bool>false</bool>
+                    </property>
                     <property name="font">
                      <font>
                       <pointsize>13</pointsize>
@@ -866,17 +875,7 @@
                     </property>
                     <item>
                      <property name="text">
-                      <string>Float32 Steering + Motor</string>
-                     </property>
-                    </item>
-                    <item>
-                     <property name="text">
                       <string>Float32 Steering</string>
-                     </property>
-                    </item>
-                    <item>
-                     <property name="text">
-                      <string>Float32 Motor</string>
                      </property>
                     </item>
                    </widget>
@@ -896,6 +895,9 @@
                   </item>
                   <item row="3" column="1">
                    <widget class="QSpinBox" name="spinSteeringReceiveTimeout">
+                    <property name="enabled">
+                     <bool>false</bool>
+                    </property>
                     <property name="font">
                      <font>
                       <pointsize>13</pointsize>
@@ -975,22 +977,15 @@
                   </item>
                   <item row="2" column="1">
                    <widget class="QComboBox" name="comboMotorReceiveFormat">
+                    <property name="enabled">
+                     <bool>false</bool>
+                    </property>
                     <property name="font">
                      <font>
                       <pointsize>13</pointsize>
                       <bold>false</bold>
                      </font>
                     </property>
-                    <item>
-                     <property name="text">
-                      <string>Float32 Steering + Motor</string>
-                     </property>
-                    </item>
-                    <item>
-                     <property name="text">
-                      <string>Float32 Steering</string>
-                     </property>
-                    </item>
                     <item>
                      <property name="text">
                       <string>Float32 Motor</string>
@@ -1013,6 +1008,9 @@
                   </item>
                   <item row="3" column="1">
                    <widget class="QSpinBox" name="spinMotorReceiveTimeout">
+                    <property name="enabled">
+                     <bool>false</bool>
+                    </property>
                     <property name="font">
                      <font>
                       <pointsize>13</pointsize>
@@ -1055,7 +1053,7 @@
                      <string/>
                     </property>
                     <property name="checked">
-                     <bool>false</bool>
+                     <bool>true</bool>
                     </property>
                    </widget>
                   </item>
@@ -1080,8 +1078,8 @@
                <rect>
                 <x>0</x>
                 <y>0</y>
-                <width>504</width>
-                <height>525</height>
+                <width>489</width>
+                <height>619</height>
                </rect>
               </property>
               <layout class="QVBoxLayout" name="verticalLayout_11">
@@ -1259,7 +1257,7 @@
                      <string/>
                     </property>
                     <property name="checked">
-                     <bool>false</bool>
+                     <bool>true</bool>
                     </property>
                    </widget>
                   </item>
@@ -1304,7 +1302,7 @@
                      <number>65535</number>
                     </property>
                     <property name="value">
-                     <number>5006</number>
+                     <number>5007</number>
                     </property>
                    </widget>
                   </item>
@@ -1379,6 +1377,82 @@
                      </property>
                     </item>
                    </widget>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+               <item>
+                <widget class="QGroupBox" name="groupSettingsRC">
+                 <property name="title">
+                  <string>Neoslider Einstellung</string>
+                 </property>
+                 <layout class="QFormLayout" name="formLayout_7">
+                  <item row="0" column="0">
+                   <widget class="QLabel" name="labelSettingsPort">
+                    <property name="text">
+                     <string>Port</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="0" column="1">
+                   <widget class="QSpinBox" name="spinSettingsPort">
+                    <property name="minimum">
+                     <number>1</number>
+                    </property>
+                    <property name="maximum">
+                     <number>65535</number>
+                    </property>
+                    <property name="value">
+                     <number>5008</number>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="1" column="0">
+                   <widget class="QLabel" name="labelNeosliderMin">
+                    <property name="text">
+                     <string>Neoslider Min</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="1" column="1">
+                   <widget class="QSpinBox" name="spinNeosliderMin">
+                    <property name="minimum">
+                     <number>0</number>
+                    </property>
+                    <property name="maximum">
+                     <number>1023</number>
+                    </property>
+                    <property name="value">
+                     <number>300</number>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="2" column="0">
+                   <widget class="QLabel" name="labelNeosliderMax">
+                    <property name="text">
+                     <string>Neoslider Max</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="2" column="1">
+                   <widget class="QSpinBox" name="spinNeosliderMax">
+                    <property name="maximum">
+                     <number>1023</number>
+                    </property>
+                    <property name="value">
+                     <number>700</number>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="3" column="0">
+                   <widget class="QLabel" name="labelNeosliderTolerance">
+                    <property name="text">
+                     <string>0° Toleranz</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item row="3" column="1">
+                   <widget class="QSpinBox" name="spinNeosliderTolerance"/>
                   </item>
                  </layout>
                 </widget>

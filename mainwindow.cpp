@@ -33,6 +33,9 @@
 #include <QPlainTextEdit>
 #include <QDateTime>
 #include <QScrollBar>
+#include <QLabel>
+#include <QLayoutItem>
+#include <QDir>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -41,6 +44,7 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
 
     initializeOverviewPage();
+    initializeRecordingPage();
 
     algorithmRuntime = new AlgorithmRuntime(this);
 
@@ -797,6 +801,32 @@ MainWindow::MainWindow(QWidget *parent)
                     );
 
             /*
+             * Neoslider-Konfiguration.
+             *
+             * Aktivierung und Ziel-IP werden von der
+             * Steuerungsausgabe übernommen.
+             */
+            udpConfiguration.neoslider.enabled =
+                udpConfiguration.command.enabled;
+
+            udpConfiguration.neoslider.address =
+                udpConfiguration.command.address;
+
+            udpConfiguration.neoslider.port =
+                static_cast<quint16>(
+                    ui->spinSettingsPort->value()
+                    );
+
+            udpConfiguration.neoslider.minimum =
+                ui->spinNeosliderMin->value();
+
+            udpConfiguration.neoslider.maximum =
+                ui->spinNeosliderMax->value();
+
+            udpConfiguration.neoslider.tolerance =
+                ui->spinNeosliderTolerance->value();
+
+            /*
              * Ausgewählte Simulink-Signalzuordnungen
              */
             udpConfiguration.lidarXInputSignal =
@@ -875,7 +905,18 @@ MainWindow::MainWindow(QWidget *parent)
                             .arg(ui->spinSteeringReceivePort->value()),
 
                         QStringLiteral("Command-Port: %1")
-                            .arg(ui->spinCommandTargetPort->value())
+                            .arg(ui->spinCommandTargetPort->value()),
+
+                 QStringLiteral("Command-Port: %1")
+                     .arg(ui->spinCommandTargetPort->value()),
+
+                 QStringLiteral("Neoslider-Port: %1")
+                     .arg(ui->spinSettingsPort->value()),
+
+                 QStringLiteral("Neoslider: Min %1 | Max %2 | Toleranz %3")
+                     .arg(ui->spinNeosliderMin->value())
+                     .arg(ui->spinNeosliderMax->value())
+                     .arg(ui->spinNeosliderTolerance->value())
                 }
                 );
 
@@ -1678,6 +1719,159 @@ void MainWindow::initializeOverviewPage()
         );
 }
 
+void MainWindow::initializeRecordingPage()
+{
+    /*
+     * Ohne geladenen Algorithmus kann keine
+     * Aufzeichnung aktiviert werden.
+     */
+    ui->checkRecordingEnabled->setChecked(false);
+    ui->checkRecordingEnabled->setEnabled(false);
+
+    /*
+     * Anfangszustand der Signalcheckboxen.
+     */
+    ui->checkRecordSteeringActual->setChecked(false);
+    ui->checkRecordMotorActual->setChecked(false);
+    ui->checkRecordLidar->setChecked(false);
+    ui->checkRecordSteeringSetpoint->setChecked(false);
+    ui->checkRecordMotorSetpoint->setChecked(false);
+
+    /*
+     * Standardspeicheranzeige.
+     */
+    ui->editRecordingPath->setText(
+        QStringLiteral("Kein Speicherort ausgewählt")
+        );
+
+    /*
+     * Verbindungen der Aufzeichnungsseite.
+     */
+    connect(
+        ui->checkRecordingEnabled,
+        &QCheckBox::toggled,
+        this,
+        [this]()
+        {
+            updateRecordingPageState();
+        }
+        );
+
+    connect(
+        ui->editRecordingFilename,
+        &QLineEdit::textChanged,
+        this,
+        [this]()
+        {
+            updateRecordingFilePreviews();
+        }
+        );
+
+    connect(
+        ui->buttonResetFilename,
+        &QPushButton::clicked,
+        this,
+        [this]()
+        {
+            resetRecordingFilename();
+        }
+        );
+
+    connect(
+        ui->buttonSelectRecordingPath,
+        &QPushButton::clicked,
+        this,
+        [this]()
+        {
+            selectRecordingPath();
+        }
+        );
+
+    connect(
+        ui->checkRecordLidar,
+        &QCheckBox::toggled,
+        this,
+        [this]()
+        {
+            updateRecordingFilePreviews();
+        }
+        );
+
+    updateRecordingFilePreviews();
+    updateRecordingPageState();
+}
+
+void MainWindow::resetRecordingFilename()
+{
+    ui->editRecordingFilename->setText(
+        QStringLiteral(
+            "simulation_YYYY-MM-DD_HH-mm-ss"
+            )
+        );
+}
+
+void MainWindow::selectRecordingPath()
+{
+    QString initialDirectory;
+
+    /*
+     * Wenn bereits ein Speicherort angezeigt wird,
+     * soll der Dialog dort geöffnet werden.
+     */
+    const QString currentRecordingPath =
+        QDir::fromNativeSeparators(
+            ui->editRecordingPath->text().trimmed()
+            );
+
+    if (!currentRecordingPath.isEmpty()
+        && QDir(currentRecordingPath).exists()) {
+
+        initialDirectory = currentRecordingPath;
+    } else if (!algorithmFolder.isEmpty()) {
+
+        /*
+         * Falls noch kein gültiger Speicherort gesetzt ist,
+         * wird der Elternordner des Algorithmus verwendet.
+         */
+        QDir algorithmDirectory(algorithmFolder);
+
+        if (algorithmDirectory.cdUp()) {
+            initialDirectory =
+                algorithmDirectory.absolutePath();
+        } else {
+            /*
+             * Fallback auf das Algorithmusverzeichnis.
+             */
+            initialDirectory = algorithmFolder;
+        }
+    } else {
+        /*
+         * Letzter Fallback, wenn noch kein Algorithmus
+         * geladen wurde.
+         */
+        initialDirectory = QDir::homePath();
+    }
+
+    const QString selectedDirectory =
+        QFileDialog::getExistingDirectory(
+            this,
+            QStringLiteral(
+                "Speicherort für Aufzeichnungen auswählen"
+                ),
+            initialDirectory
+            );
+
+    if (selectedDirectory.isEmpty()) {
+        return;
+    }
+
+    ui->editRecordingPath->setText(
+        QDir::toNativeSeparators(
+            selectedDirectory
+            )
+        );
+}
+
 void MainWindow::appendLog(
     const QString &title,
     const QStringList &details)
@@ -1892,6 +2086,337 @@ bool MainWindow::isBooleanSignal(
            || signal.cType.compare(
                   QStringLiteral("bool"),
                   Qt::CaseInsensitive) == 0;
+}
+
+void MainWindow::updateRecordingPageState()
+{
+    const bool algorithmLoaded =
+        !algorithmFolder.isEmpty();
+
+    /*
+     * Die Hauptcheckbox ist nur bei geladenem
+     * Algorithmus bedienbar.
+     */
+    ui->checkRecordingEnabled->setEnabled(
+        algorithmLoaded
+        );
+
+    if (!algorithmLoaded) {
+        ui->checkRecordingEnabled->setChecked(false);
+    }
+
+    const bool recordingEnabled =
+        algorithmLoaded
+        && ui->checkRecordingEnabled->isChecked();
+
+    /*
+     * Einstellungen und Speicherbereich hängen nur
+     * von der globalen Aufzeichnungsaktivierung ab.
+     */
+    ui->groupRecordingSettings->setEnabled(
+        recordingEnabled
+        );
+
+    ui->groupRecordingStorage->setEnabled(
+        recordingEnabled
+        );
+
+    /*
+     * Signalverfügbarkeit aus der aktuellen
+     * Ein-/Ausgangskonfiguration bestimmen.
+     */
+    const bool lidarAvailable =
+        ui->checkLidarReceiveEnabled->isChecked()
+        && ui->comboLidarX->currentIndex() > 0
+        && ui->comboLidarY->currentIndex() > 0;
+
+    const bool steeringActualAvailable =
+        ui->checkSteeringReceiveEnabled->isChecked()
+        && ui->comboSteeringIn->currentIndex() > 0;
+
+    const bool motorActualAvailable =
+        ui->checkMotorReceiveEnabled->isChecked()
+        && ui->comboMotorIn->currentIndex() > 0;
+
+    const bool steeringSetpointAvailable =
+        ui->checkCommandSendEnabled->isChecked()
+        && ui->comboSteeringOut->currentIndex() > 0;
+
+    const bool motorSetpointAvailable =
+        ui->checkCommandSendEnabled->isChecked()
+        && ui->comboMotorOut->currentIndex() > 0;
+
+    updateRecordSignalCheckBox(
+        ui->checkRecordLidar,
+        QStringLiteral("lidar"),
+        lidarAvailable
+        );
+
+    updateRecordSignalCheckBox(
+        ui->checkRecordSteeringActual,
+        QStringLiteral("steeringActual"),
+        steeringActualAvailable
+        );
+
+    updateRecordSignalCheckBox(
+        ui->checkRecordMotorActual,
+        QStringLiteral("motorActual"),
+        motorActualAvailable
+        );
+
+    updateRecordSignalCheckBox(
+        ui->checkRecordSteeringSetpoint,
+        QStringLiteral("steeringSetpoint"),
+        steeringSetpointAvailable
+        );
+
+    updateRecordSignalCheckBox(
+        ui->checkRecordMotorSetpoint,
+        QStringLiteral("motorSetpoint"),
+        motorSetpointAvailable
+        );
+
+    /*
+     * Diagnosesignale synchronisieren.
+     */
+    updateRecordedDiagnostics();
+
+    /*
+     * Die drei Untergruppen bleiben sichtbar.
+     * Die einzelnen Checkboxen werden separat gesteuert.
+     */
+    ui->groupRecordedInputs->setEnabled(true);
+    ui->groupRecordedOutputs->setEnabled(true);
+    ui->groupRecordedDiagnostics->setEnabled(true);
+
+    updateRecordingFilePreviews();
+}
+
+void MainWindow::updateRecordSignalCheckBox(
+    QCheckBox *checkBox,
+    const QString &signalKey,
+    bool signalAvailable)
+{
+    if (checkBox == nullptr) {
+        return;
+    }
+
+    const bool wasAvailable =
+        recordingSignalAvailability.value(
+            signalKey,
+            false
+            );
+
+    /*
+     * Ein neu verfügbares Signal wird standardmäßig
+     * für die Aufzeichnung ausgewählt.
+     */
+    if (signalAvailable && !wasAvailable) {
+        checkBox->setChecked(true);
+    }
+
+    /*
+     * Ist das Signal nicht mehr verfügbar, kann es
+     * auch nicht aufgezeichnet werden.
+     */
+    if (!signalAvailable) {
+        checkBox->setChecked(false);
+    }
+
+    recordingSignalAvailability.insert(
+        signalKey,
+        signalAvailable
+        );
+
+    const bool recordingEnabled =
+        !algorithmFolder.isEmpty()
+        && ui->checkRecordingEnabled->isChecked();
+
+    checkBox->setEnabled(
+        recordingEnabled
+        && signalAvailable
+        );
+}
+
+void MainWindow::updateRecordedDiagnostics()
+{
+    /*
+     * Aktuelle Auswahlzustände sichern.
+     */
+    for (auto iterator =
+         recordedDiagnosticCheckBoxes.constBegin();
+         iterator !=
+         recordedDiagnosticCheckBoxes.constEnd();
+         ++iterator) {
+
+        if (iterator.value() != nullptr) {
+            recordedDiagnosticSelections.insert(
+                iterator.key(),
+                iterator.value()->isChecked()
+                );
+        }
+    }
+
+    /*
+     * Bisherige Widgets entfernen.
+     */
+    while (QLayoutItem *item =
+           ui->layoutRecordedDiagnostics
+               ->takeAt(0)) {
+
+        if (QWidget *widget = item->widget()) {
+            widget->deleteLater();
+        }
+
+        delete item;
+    }
+
+    recordedDiagnosticCheckBoxes.clear();
+
+    QStringList configuredSignals;
+
+    for (const MonitoringRow &row : monitoringRows) {
+        if (row.comboSignal == nullptr) {
+            continue;
+        }
+
+        if (row.comboSignal->currentIndex() <= 0) {
+            continue;
+        }
+
+        const QString signalName =
+            row.comboSignal->currentText().trimmed();
+
+        if (signalName.isEmpty()) {
+            continue;
+        }
+
+        if (configuredSignals.contains(signalName)) {
+            continue;
+        }
+
+        configuredSignals.append(signalName);
+    }
+
+    const bool recordingEnabled =
+        !algorithmFolder.isEmpty()
+        && ui->checkRecordingEnabled->isChecked();
+
+    if (configuredSignals.isEmpty()) {
+        auto *label =
+            new QLabel(
+                QStringLiteral(
+                    "Keine Diagnosesignale ausgewählt"
+                    ),
+                ui->diagnosticsRecordedContainer
+                );
+
+        label->setEnabled(false);
+        label->setWordWrap(true);
+
+        ui->layoutRecordedDiagnostics->addWidget(
+            label
+            );
+
+        return;
+    }
+
+    for (const QString &signalName :
+         configuredSignals) {
+
+        auto *checkBox =
+            new QCheckBox(
+                signalName,
+                ui->diagnosticsRecordedContainer
+                );
+
+        /*
+         * Neue Diagnosesignale sind standardmäßig
+         * für die Aufzeichnung ausgewählt.
+         */
+        const bool checked =
+            recordedDiagnosticSelections.value(
+                signalName,
+                true
+                );
+
+        checkBox->setChecked(checked);
+        checkBox->setEnabled(recordingEnabled);
+
+        connect(
+            checkBox,
+            &QCheckBox::toggled,
+            this,
+            [this, signalName](bool checked)
+            {
+                recordedDiagnosticSelections.insert(
+                    signalName,
+                    checked
+                    );
+            }
+            );
+
+        ui->layoutRecordedDiagnostics->addWidget(
+            checkBox
+            );
+
+        recordedDiagnosticCheckBoxes.insert(
+            signalName,
+            checkBox
+            );
+    }
+
+    ui->layoutRecordedDiagnostics->addStretch();
+}
+
+void MainWindow::updateRecordingFilePreviews()
+{
+    QString baseName =
+        ui->editRecordingFilename
+            ->text()
+            .trimmed();
+
+    if (baseName.isEmpty()) {
+        baseName =
+            QStringLiteral(
+                "simulation_YYYY-MM-DD_HH-mm-ss"
+                );
+    }
+
+    /*
+     * Falls der Benutzer .csv eingibt, wird die
+     * Erweiterung für die Vorschau nur einmal verwendet.
+     */
+    if (baseName.endsWith(
+            QStringLiteral(".csv"),
+            Qt::CaseInsensitive)) {
+
+        baseName.chop(4);
+    }
+
+    ui->textMainFilePreview->setText(
+        baseName
+        + QStringLiteral(".csv")
+        );
+
+    if (ui->checkRecordLidar->isChecked()
+        && ui->checkRecordLidar->isEnabled()) {
+
+        ui->textLidarFilePreview->setText(
+            baseName
+            + QStringLiteral("_lidar.csv")
+            );
+
+        ui->textLidarFilePreview->setEnabled(true);
+        ui->labelLidarFilePreviewTitle->setEnabled(true);
+    } else {
+        ui->textLidarFilePreview->setText(
+            QStringLiteral("Nicht aktiviert")
+            );
+
+        ui->textLidarFilePreview->setEnabled(false);
+        ui->labelLidarFilePreviewTitle->setEnabled(false);
+    }
 }
 
 MainWindow::SignalRole MainWindow::determineSignalRole(
@@ -2172,6 +2697,8 @@ void MainWindow::invalidateValidation()
 {
     ui->buttonStart->setEnabled(false);
 
+    updateRecordingPageState();
+
     ui->statusBar->showMessage(
         QStringLiteral(
             "Konfiguration geändert – erneute "
@@ -2197,6 +2724,16 @@ void MainWindow::selectAlgorithmPackage()
     }
 
     algorithmRuntime->unload();
+
+    algorithmFolder.clear();
+
+    ui->checkRecordingEnabled->setChecked(false);
+    ui->checkRecordingEnabled->setEnabled(false);
+
+    recordingSignalAvailability.clear();
+    recordedDiagnosticSelections.clear();
+
+    updateRecordingPageState();
 
     clearMonitoringRows();
     invalidateValidation();
@@ -2326,6 +2863,39 @@ void MainWindow::selectAlgorithmPackage()
     algorithmFolder = selectedDirectory;
 
     algorithmRuntime->configure(algorithmFolder);
+
+    /*
+ * Standard-Speicherort ist der übergeordnete Ordner
+ * des geladenen .algorithm-Verzeichnisses.
+ */
+    QDir algorithmDirectory(algorithmFolder);
+
+    if (algorithmDirectory.cdUp()) {
+        ui->editRecordingPath->setText(
+            QDir::toNativeSeparators(
+                algorithmDirectory.absolutePath()
+                )
+            );
+    } else {
+        /*
+     * Fallback: Falls der Elternordner nicht bestimmt
+     * werden kann, wird das Algorithmusverzeichnis selbst
+     * als Speicherort verwendet.
+     */
+        ui->editRecordingPath->setText(
+            QDir::toNativeSeparators(
+                algorithmFolder
+                )
+            );
+    }
+
+    recordingSignalAvailability.clear();
+    recordedDiagnosticSelections.clear();
+
+    ui->checkRecordingEnabled->setChecked(false);
+    ui->checkRecordingEnabled->setEnabled(true);
+
+    updateRecordingPageState();
 
     ui->labelAlgorithm->setText(
         QStringLiteral("Algorithmus: %1")

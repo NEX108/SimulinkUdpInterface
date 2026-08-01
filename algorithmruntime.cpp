@@ -226,6 +226,7 @@ bool AlgorithmRuntime::start(
         m_steeringUdp.stop();
         m_motorRpmUdp.stop();
         m_commandUdp.stop();
+        m_neosliderConfigUdp.stop();
     };
 
     /*
@@ -282,6 +283,25 @@ bool AlgorithmRuntime::start(
     }
 
     /*
+     * Sender für die Neoslider-Konfiguration.
+     */
+    if (m_udpConfiguration.neoslider.enabled) {
+        if (!m_neosliderConfigUdp.startSender(
+                m_udpConfiguration.neoslider.address,
+                m_udpConfiguration.neoslider.port,
+                errorMessage)) {
+
+            errorMessage =
+                QStringLiteral(
+                    "Neoslider-Konfiguration: %1")
+                    .arg(errorMessage);
+
+            closeUdpChannels();
+            return false;
+        }
+    }
+
+    /*
      * Runtime zurücksetzen und Algorithmus starten.
      */
     m_currentStepCount = 0;
@@ -307,6 +327,7 @@ void AlgorithmRuntime::stop()
     m_steeringUdp.stop();
     m_motorRpmUdp.stop();
     m_commandUdp.stop();
+    m_neosliderConfigUdp.stop();
 
     m_latestUdpPacket.clear();
 
@@ -1270,6 +1291,17 @@ QByteArray AlgorithmRuntime::createOutputPacket(
     return packet;
 }
 
+QByteArray
+AlgorithmRuntime::createNeosliderConfigurationPacket() const
+{
+    return QStringLiteral(
+               "FLOATS,%1,%2,%3")
+        .arg(m_udpConfiguration.neoslider.minimum)
+        .arg(m_udpConfiguration.neoslider.maximum)
+        .arg(m_udpConfiguration.neoslider.tolerance)
+        .toUtf8();
+}
+
 qsizetype AlgorithmRuntime::expectedOutputPacketSize() const
 {
     qsizetype totalSize = 0;
@@ -1886,6 +1918,32 @@ void AlgorithmRuntime::executeCycle()
                     emit runtimeError(sendError);
                 }
             }
+        }
+    }
+
+    /*
+     * Die Neoslider-Konfiguration hängt nur von der
+     * Hauptaktivierung ab, nicht vom Bool-Ausgangssignal.
+     */
+    if (m_udpConfiguration.neoslider.enabled) {
+        const QByteArray neosliderPacket =
+            createNeosliderConfigurationPacket();
+
+        QString neosliderSendError;
+
+        if (m_neosliderConfigUdp.sendPacket(
+                neosliderPacket,
+                neosliderSendError)) {
+
+            ++m_statistics.packetsSent;
+        }
+        else {
+            emit runtimeError(
+                QStringLiteral(
+                    "Neoslider-Konfiguration konnte nicht "
+                    "gesendet werden: %1")
+                    .arg(neosliderSendError)
+                );
         }
     }
 
