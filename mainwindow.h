@@ -148,6 +148,8 @@ private:
     AlgorithmRuntime *algorithmRuntime = nullptr;
 
     QElapsedTimer logTimer;
+    QElapsedTimer liveMonitorUpdateTimer;
+
     QHash<QString, qint64> lastLogTimes;
 
     double steeringActual = 0.0;

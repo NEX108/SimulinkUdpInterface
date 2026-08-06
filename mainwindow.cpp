@@ -1022,6 +1022,21 @@ MainWindow::MainWindow(QWidget *parent)
                             return;
                         }
 
+                        /*
+                         * Live-Werte und Diagnosekarten auf maximal
+                         * 20 Aktualisierungen pro Sekunde begrenzen.
+                         */
+                        if (liveMonitorUpdateTimer.isValid()
+                            && liveMonitorUpdateTimer.elapsed() < 50) {
+                            return;
+                        }
+
+                        if (liveMonitorUpdateTimer.isValid()) {
+                            liveMonitorUpdateTimer.restart();
+                        } else {
+                            liveMonitorUpdateTimer.start();
+                        }
+
                         double steeringSoll = 0.0;
                         double motorSoll = 0.0;
                         QString errorMessage;

@@ -2,6 +2,7 @@
 #define MONITORINGWINDOW_H
 
 #include <QDialog>
+#include <QElapsedTimer>
 #include <QLabel>
 #include <QVector>
 #include <QString>
@@ -42,11 +43,17 @@ public:
         const QVector<DiagnosticValue> &diagnostics);
 
 private:
+    void scheduleLidarPlotRangeCorrection();
     void constrainLidarPlotRange();
     void clearDiagnosticValues();
 
     Ui::MonitoringWindow *ui;
     QCustomPlot *lidarPlot = nullptr;
+
+    bool rangeCorrectionPending = false;
+    bool correctingRange = false;
+
+    QElapsedTimer lidarUpdateTimer;
 
     QVector<QWidget *> diagnosticCards;
 };

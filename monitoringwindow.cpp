@@ -3,6 +3,7 @@
 
 #include <QVBoxLayout>
 #include <QFrame>
+#include <QTimer>
 #include <algorithm>
 #include <cmath>
 
@@ -39,17 +40,12 @@ MonitoringWindow::MonitoringWindow(QWidget *parent)
             )
         );
 
+    /*
+ * Das Koordinatensystem bleibt fest eingestellt.
+ * Zoomen und Verschieben sind deaktiviert.
+ */
     lidarPlot->setInteractions(
-        QCP::iRangeDrag |
-        QCP::iRangeZoom
-        );
-
-    lidarPlot->axisRect()->setRangeDrag(
-        Qt::Horizontal | Qt::Vertical
-        );
-
-    lidarPlot->axisRect()->setRangeZoom(
-        Qt::Horizontal | Qt::Vertical
+        QCP::Interactions()
         );
 
     lidarPlot->xAxis->grid()->setVisible(true);
@@ -84,7 +80,7 @@ MonitoringWindow::MonitoringWindow(QWidget *parent)
         this,
         [this](const QCPRange &)
         {
-            constrainLidarPlotRange();
+            scheduleLidarPlotRangeCorrection();
         }
         );
 
@@ -94,6 +90,29 @@ MonitoringWindow::MonitoringWindow(QWidget *parent)
         this,
         [this](const QCPRange &)
         {
+            scheduleLidarPlotRangeCorrection();
+        }
+        );
+}
+
+void MonitoringWindow::scheduleLidarPlotRangeCorrection()
+{
+    if (rangeCorrectionPending) {
+        return;
+    }
+
+    rangeCorrectionPending = true;
+
+    /*
+     * Die Korrektur erst ausführen, nachdem QCustomPlot
+     * den aktuellen Maus- oder Achsenvorgang beendet hat.
+     */
+    QTimer::singleShot(
+        0,
+        this,
+        [this]()
+        {
+            rangeCorrectionPending = false;
             constrainLidarPlotRange();
         }
         );
@@ -104,31 +123,77 @@ void MonitoringWindow::constrainLidarPlotRange()
     constexpr double maxRange = 13.0;
     constexpr double minSpan = 0.5;
 
-    static bool correctingRange = false;
-
-    if (correctingRange) {
+    if (correctingRange || !lidarPlot) {
         return;
     }
 
     correctingRange = true;
 
-    QCPRange xRange = lidarPlot->xAxis->range();
-    QCPRange yRange = lidarPlot->yAxis->range();
+    const QCPRange xRange =
+        lidarPlot->xAxis->range();
 
-    double xSpan = xRange.size();
-    double ySpan = yRange.size();
+    const QCPRange yRange =
+        lidarPlot->yAxis->range();
 
-    xSpan = qBound(minSpan, xSpan, 2.0 * maxRange);
-    ySpan = qBound(minSpan, ySpan, 2.0 * maxRange);
+    /*
+     * Ungültige oder kollabierte Achsenbereiche auf
+     * den sicheren Ausgangsbereich zurücksetzen.
+     */
+    if (!std::isfinite(xRange.lower)
+        || !std::isfinite(xRange.upper)
+        || !std::isfinite(yRange.lower)
+        || !std::isfinite(yRange.upper)
+        || xRange.size() <= 0.0
+        || yRange.size() <= 0.0) {
+
+        lidarPlot->xAxis->setRange(-12.0, 12.0);
+        lidarPlot->yAxis->setRange(-12.0, 12.0);
+
+        correctingRange = false;
+
+        lidarPlot->replot(
+            QCustomPlot::rpQueuedReplot
+            );
+
+        return;
+    }
+
+    const double xSpan =
+        qBound(
+            minSpan,
+            xRange.size(),
+            2.0 * maxRange
+            );
+
+    const double ySpan =
+        qBound(
+            minSpan,
+            yRange.size(),
+            2.0 * maxRange
+            );
 
     double xCenter = xRange.center();
     double yCenter = yRange.center();
 
-    const double maxXCenter = maxRange - xSpan / 2.0;
-    const double maxYCenter = maxRange - ySpan / 2.0;
+    const double maxXCenter =
+        maxRange - xSpan / 2.0;
 
-    xCenter = qBound(-maxXCenter, xCenter, maxXCenter);
-    yCenter = qBound(-maxYCenter, yCenter, maxYCenter);
+    const double maxYCenter =
+        maxRange - ySpan / 2.0;
+
+    xCenter =
+        qBound(
+            -maxXCenter,
+            xCenter,
+            maxXCenter
+            );
+
+    yCenter =
+        qBound(
+            -maxYCenter,
+            yCenter,
+            maxYCenter
+            );
 
     lidarPlot->xAxis->setRange(
         xCenter - xSpan / 2.0,
@@ -141,6 +206,10 @@ void MonitoringWindow::constrainLidarPlotRange()
         );
 
     correctingRange = false;
+
+    lidarPlot->replot(
+        QCustomPlot::rpQueuedReplot
+        );
 }
 
 void MonitoringWindow::setLidarPoints(
@@ -149,6 +218,21 @@ void MonitoringWindow::setLidarPoints(
 {
     if (!lidarPlot || lidarPlot->graphCount() == 0) {
         return;
+    }
+
+    /*
+     * Die LiDAR-Darstellung auf maximal 20 Hz begrenzen.
+     * 50 ms entsprechen 20 Aktualisierungen pro Sekunde.
+     */
+    if (lidarUpdateTimer.isValid()
+        && lidarUpdateTimer.elapsed() < 50) {
+        return;
+    }
+
+    if (lidarUpdateTimer.isValid()) {
+        lidarUpdateTimer.restart();
+    } else {
+        lidarUpdateTimer.start();
     }
 
     const qsizetype pointCount =
