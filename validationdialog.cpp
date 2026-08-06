@@ -29,7 +29,6 @@ ValidationDialog::ValidationDialog(QWidget *parent)
         ui->browserValidationInputs,
         ui->browserValidationOutputs,
         ui->browserValidationMonitoring,
-        ui->browserValidationParameters,
         ui->browserValidationWarnings,
         ui->browserValidationErrors
     };
@@ -63,7 +62,6 @@ ValidationDialog::ValidationDialog(QWidget *parent)
         ui->groupValidationInputs,
         ui->groupValidationOutputs,
         ui->groupValidationMonitoring,
-        ui->groupValidationParameters,
         ui->groupValidationWarnings,
         ui->groupValidationErrors
     };
@@ -138,13 +136,6 @@ void ValidationDialog::setValidationData(
             )
         );
 
-    ui->browserValidationParameters->setHtml(
-        formatEntries(
-            data.parameters,
-            QStringLiteral("Keine Parameter konfiguriert.")
-            )
-        );
-
     const QString warningsHtml =
         formatEntries(
             data.warnings,
@@ -183,7 +174,6 @@ void ValidationDialog::setValidationData(
             adjustBrowserHeight(ui->browserValidationInputs);
             adjustBrowserHeight(ui->browserValidationOutputs);
             adjustBrowserHeight(ui->browserValidationMonitoring);
-            adjustBrowserHeight(ui->browserValidationParameters);
             adjustBrowserHeight(ui->browserValidationWarnings);
             adjustBrowserHeight(ui->browserValidationErrors);
 
@@ -191,7 +181,6 @@ void ValidationDialog::setValidationData(
                 ui->groupValidationInputs,
                 ui->groupValidationOutputs,
                 ui->groupValidationMonitoring,
-                ui->groupValidationParameters,
                 ui->groupValidationWarnings,
                 ui->groupValidationErrors
             };

@@ -1490,9 +1490,11 @@ bool AlgorithmRuntime::decodeLidarPacket(
         }
 
         const float angle =
-            lidarData.angleMin
-            + static_cast<float>(i)
-                  * lidarData.angleIncrement;
+            -(
+                lidarData.angleMin
+                + static_cast<float>(i)
+                      * lidarData.angleIncrement
+                );
 
         lidarData.x[i] =
             range * std::cos(angle);

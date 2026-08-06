@@ -707,12 +707,6 @@ MainWindow::MainWindow(QWidget *parent)
             }
 
             /*
-             * Parameter
-             *
-             * Werden später ergänzt.
-             */
-
-            /*
              * Validierungsdialog
              */
             ValidationDialog dialog(this);
@@ -738,8 +732,8 @@ MainWindow::MainWindow(QWidget *parent)
         );
 
     /*
- * Algorithmus starten
- */
+     * Algorithmus starten
+     */
     connect(
         ui->buttonStart,
         &QPushButton::clicked,
@@ -2738,10 +2732,10 @@ void MainWindow::selectAlgorithmPackage()
     clearMonitoringRows();
     invalidateValidation();
 
-    ui->checkLidarReceiveEnabled->setChecked(false);
-    ui->checkSteeringReceiveEnabled->setChecked(false);
-    ui->checkMotorReceiveEnabled->setChecked(false);
-    ui->checkCommandSendEnabled->setChecked(false);
+    //ui->checkLidarReceiveEnabled->setChecked(false);
+    //ui->checkSteeringReceiveEnabled->setChecked(false);
+    //ui->checkMotorReceiveEnabled->setChecked(false);
+    //ui->checkCommandSendEnabled->setChecked(false);
 
     const QString manifestPath =
         selectedDirectory
@@ -2897,9 +2891,37 @@ void MainWindow::selectAlgorithmPackage()
 
     updateRecordingPageState();
 
+    /*
+     * Anzeigenamen direkt aus dem ausgewählten
+     * Ordnernamen bestimmen.
+     */
+    QString algorithmDisplayName =
+        QDir(algorithmFolder).dirName();
+
+    const QString algorithmSuffix =
+        QStringLiteral(".algorithm");
+
+    /*
+     * Die Endung nur entfernen, wenn sie tatsächlich
+     * vorhanden ist. Normale Ordnernamen bleiben unverändert.
+     */
+    if (
+        algorithmDisplayName.endsWith(
+            algorithmSuffix,
+            Qt::CaseInsensitive
+            )
+        && algorithmDisplayName.length()
+               > algorithmSuffix.length()
+        ) {
+        algorithmDisplayName.chop(
+            algorithmSuffix.length()
+            );
+    }
+
     ui->labelAlgorithm->setText(
         QStringLiteral("Algorithmus: %1")
-            .arg(algorithmRuntime->modelName()));
+            .arg(algorithmDisplayName)
+        );
 
     ui->labelAlgorithm->setToolTip(
         QStringLiteral(

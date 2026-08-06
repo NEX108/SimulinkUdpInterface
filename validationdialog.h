@@ -15,7 +15,6 @@ struct ValidationData
     QStringList inputs;
     QStringList outputs;
     QStringList monitoring;
-    QStringList parameters;
     QStringList warnings;
     QStringList errors;
 };
