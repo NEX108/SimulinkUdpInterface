@@ -36,6 +36,7 @@
 #include <QLabel>
 #include <QLayoutItem>
 #include <QDir>
+#include <cmath>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -47,6 +48,31 @@ MainWindow::MainWindow(QWidget *parent)
     initializeRecordingPage();
 
     algorithmRuntime = new AlgorithmRuntime(this);
+
+    /*
+ * Eingehende LiDAR-Daten gegebenenfalls in die
+ * separate LiDAR-CSV schreiben.
+ */
+    connect(
+        algorithmRuntime,
+        &AlgorithmRuntime::lidarDataUpdated,
+        this,
+        &MainWindow::writeLidarRecording
+        );
+
+    /*
+ * Timer für die CSV-Aufzeichnung vorbereiten.
+ * Das konkrete Intervall wird beim Start aus der
+ * eingestellten Aufzeichnungsfrequenz berechnet.
+ */
+    recordingTimer.setTimerType(Qt::PreciseTimer);
+
+    connect(
+        &recordingTimer,
+        &QTimer::timeout,
+        this,
+        &MainWindow::writeRecordingRow
+        );
 
     logTimer.start();
 
@@ -883,6 +909,89 @@ MainWindow::MainWindow(QWidget *parent)
                 return;
             }
 
+            /*
+ * Erst nach erfolgreichem Algorithmusstart die
+ * Aufzeichnungsdateien öffnen.
+ */
+            if (!startRecording(errorMessage)) {
+                algorithmRuntime->stop();
+                stopRecording();
+
+                QMessageBox::critical(
+                    this,
+                    QStringLiteral(
+                        "Aufzeichnung konnte nicht gestartet werden"
+                        ),
+                    errorMessage
+                    );
+
+                appendLog(
+                    QStringLiteral(
+                        "ERROR Aufzeichnung konnte nicht gestartet werden"
+                        ),
+                    {
+                        errorMessage
+                    }
+                    );
+
+                return;
+            }
+
+            /*
+ * Nur wenn die Aufzeichnung in der Oberfläche aktiviert
+ * wurde, Zeitmessung und Schreibtimer starten.
+ */
+            if (ui->checkRecordingEnabled->isChecked()) {
+                const int recordingFrequency =
+                    qMax(
+                        1,
+                        ui->spinRecordingFrequency->value()
+                        );
+
+                recordingIntervalMilliseconds =
+                    qMax(
+                        1,
+                        qRound(
+                            1000.0
+                            / static_cast<double>(
+                                recordingFrequency
+                                )
+                            )
+                        );
+
+                recordingElapsedTimer.start();
+                recordingActive = true;
+
+                /*
+     * Erste Datenzeile unmittelbar zum Start schreiben.
+     * Der Zeitwert liegt dabei ungefähr bei 0.000 s.
+     */
+                writeRecordingRow();
+
+                recordingTimer.start(
+                    recordingIntervalMilliseconds
+                    );
+
+                appendLog(
+                    QStringLiteral(
+                        "SYSTEM Aufzeichnung gestartet"
+                        ),
+                    {
+                        QStringLiteral("Frequenz: %1 Hz")
+                        .arg(recordingFrequency),
+
+                            QStringLiteral("Dateiname: %1.csv")
+                                .arg(activeRecordingBaseName)
+                    }
+                    );
+            }
+
+            /*
+ * Während der laufenden Simulation darf die Auswahl
+ * nicht verändert werden.
+ */
+            ui->recordsPage->setEnabled(false);
+
             appendLog(
                 QStringLiteral("SYSTEM Ausführung gestartet"),
                 {
@@ -922,6 +1031,33 @@ MainWindow::MainWindow(QWidget *parent)
 
             ui->buttonStart->setEnabled(false);
             ui->buttonStop->setEnabled(true);
+
+            /*
+ * Nach erfolgreichem Start automatisch den Live-Monitor
+ * öffnen beziehungsweise in den Vordergrund holen.
+ *
+ * Dafür wird dieselbe Logik verwendet wie beim manuellen
+ * Anklicken des Eintrags in der Navigation.
+ */
+            for (int row = 0;
+                 row < ui->navigationList->count();
+                 ++row) {
+
+                QListWidgetItem *item =
+                    ui->navigationList->item(row);
+
+                if (item
+                    && item->text()
+                               .trimmed()
+                               .compare(
+                                   QStringLiteral("Live-Monitor"),
+                                   Qt::CaseInsensitive
+                                   ) == 0) {
+
+                    ui->navigationList->itemClicked(item);
+                    break;
+                }
+            }
         }
         );
 
@@ -934,6 +1070,15 @@ MainWindow::MainWindow(QWidget *parent)
         this,
         [this]()
         {
+            /*
+     * Zuerst den Schreibtimer anhalten und die
+     * CSV-Datei sicher schließen.
+     */
+            const bool recordingWasActive =
+                recordingActive;
+
+            stopRecording();
+
             algorithmRuntime->stop();
 
             const quint64 stepCount =
@@ -947,6 +1092,17 @@ MainWindow::MainWindow(QWidget *parent)
 
             ui->buttonStart->setEnabled(false);
             ui->buttonStop->setEnabled(false);
+
+            ui->recordsPage->setEnabled(true);
+            updateRecordingPageState();
+
+            if (recordingWasActive) {
+                appendLog(
+                    QStringLiteral(
+                        "SYSTEM Aufzeichnung beendet"
+                        )
+                    );
+            }
 
             ui->statusBar->showMessage(
                 QStringLiteral(
@@ -1726,6 +1882,754 @@ void MainWindow::initializeOverviewPage()
     ui->overviewTextBrowser->moveCursor(
         QTextCursor::Start
         );
+}
+
+QString MainWindow::resolvedRecordingBaseName() const
+{
+    QString baseName =
+        ui->editRecordingFilename
+            ->text()
+            .trimmed();
+
+    /*
+     * Leeres Feld wie den Standardplatzhalter behandeln.
+     */
+    if (baseName.isEmpty()) {
+        baseName =
+            QStringLiteral(
+                "simulation_YYYY-MM-DD_HH-mm-ss"
+                );
+    }
+
+    /*
+     * Eine versehentlich eingegebene Dateiendung entfernen.
+     */
+    if (baseName.endsWith(
+            QStringLiteral(".csv"),
+            Qt::CaseInsensitive)) {
+
+        baseName.chop(4);
+    }
+
+    /*
+     * Den Platzhalter erst unmittelbar beim Start
+     * durch den aktuellen Zeitstempel ersetzen.
+     */
+    baseName.replace(
+        QStringLiteral("YYYY-MM-DD_HH-mm-ss"),
+        QDateTime::currentDateTime().toString(
+            QStringLiteral("yyyy-MM-dd_HH-mm-ss")
+            )
+        );
+
+    /*
+     * Verhindert, dass über den Dateinamen versehentlich
+     * ein anderer Ordner angegeben wird.
+     */
+    baseName =
+        QFileInfo(baseName).fileName().trimmed();
+
+    if (baseName.isEmpty()) {
+        baseName =
+            QStringLiteral("simulation_")
+            + QDateTime::currentDateTime().toString(
+                QStringLiteral("yyyy-MM-dd_HH-mm-ss")
+                );
+    }
+
+    return baseName;
+}
+
+bool MainWindow::startRecording(
+    QString &errorMessage)
+{
+    errorMessage.clear();
+
+    /*
+     * Alten Zustand vollständig zurücksetzen.
+     */
+    if (recordingMainFile.isOpen()) {
+        recordingMainFile.close();
+    }
+
+    if (recordingLidarFile.isOpen()) {
+        recordingLidarFile.close();
+    }
+
+    recordingActive = false;
+    recordingLidar = false;
+
+    recordingSteeringActual = false;
+    recordingMotorActual = false;
+    recordingSteeringSetpoint = false;
+    recordingMotorSetpoint = false;
+
+    recordingDiagnosticSignals.clear();
+
+    activeRecordingBaseName.clear();
+    lastLidarRecordingMilliseconds = -1;
+
+    /*
+     * Ist die Gesamtaufzeichnung nicht aktiviert,
+     * muss keine Datei geöffnet werden.
+     */
+    if (!ui->checkRecordingEnabled->isChecked()) {
+        return true;
+    }
+
+    /*
+     * Auswahl beim Start einfrieren.
+     */
+    recordingSteeringActual =
+        ui->checkRecordSteeringActual->isEnabled()
+        && ui->checkRecordSteeringActual->isChecked();
+
+    recordingMotorActual =
+        ui->checkRecordMotorActual->isEnabled()
+        && ui->checkRecordMotorActual->isChecked();
+
+    recordingSteeringSetpoint =
+        ui->checkRecordSteeringSetpoint->isEnabled()
+        && ui->checkRecordSteeringSetpoint->isChecked();
+
+    recordingMotorSetpoint =
+        ui->checkRecordMotorSetpoint->isEnabled()
+        && ui->checkRecordMotorSetpoint->isChecked();
+
+    recordingLidar =
+        ui->checkRecordLidar->isEnabled()
+        && ui->checkRecordLidar->isChecked();
+
+    /*
+     * Ausgewählte Diagnosesignale in der Reihenfolge
+     * der konfigurierten Diagnosezeilen übernehmen.
+     */
+    for (const MonitoringRow &monitoringRow
+         : monitoringRows) {
+
+        if (!monitoringRow.comboSignal
+            || monitoringRow.comboSignal
+                       ->currentIndex() <= 0) {
+            continue;
+        }
+
+        const QString signalName =
+            monitoringRow.comboSignal
+                ->currentText()
+                .trimmed();
+
+        QCheckBox *recordCheckBox =
+            recordedDiagnosticCheckBoxes.value(
+                signalName,
+                nullptr
+                );
+
+        if (!recordCheckBox
+            || !recordCheckBox->isEnabled()
+            || !recordCheckBox->isChecked()) {
+            continue;
+        }
+
+        if (!recordingDiagnosticSignals.contains(
+                signalName)) {
+
+            recordingDiagnosticSignals.append(
+                signalName
+                );
+        }
+    }
+
+    const bool mainFileRequired =
+        recordingSteeringActual
+        || recordingMotorActual
+        || recordingSteeringSetpoint
+        || recordingMotorSetpoint
+        || !recordingDiagnosticSignals.isEmpty();
+
+    /*
+     * Es muss mindestens ein Signal ausgewählt sein.
+     */
+    if (!mainFileRequired && !recordingLidar) {
+        errorMessage =
+            QStringLiteral(
+                "Es wurde kein Signal für die "
+                "Aufzeichnung ausgewählt."
+                );
+
+        return false;
+    }
+
+    const QString recordingDirectory =
+        QDir::fromNativeSeparators(
+            ui->editRecordingPath
+                ->text()
+                .trimmed()
+            );
+
+    if (recordingDirectory.isEmpty()
+        || !QDir(recordingDirectory).exists()) {
+
+        errorMessage =
+            QStringLiteral(
+                "Der ausgewählte Speicherordner "
+                "existiert nicht."
+                );
+
+        recordingLidar = false;
+        return false;
+    }
+
+    /*
+     * Basisname nur einmal bestimmen. Haupt- und
+     * LiDAR-Datei erhalten dadurch denselben Zeitstempel.
+     */
+    activeRecordingBaseName =
+        resolvedRecordingBaseName();
+
+    /*
+     * Hauptdatei nur öffnen, wenn mindestens ein
+     * skalares Signal ausgewählt wurde.
+     */
+    if (mainFileRequired) {
+        const QString mainFilePath =
+            QDir(recordingDirectory).filePath(
+                activeRecordingBaseName
+                + QStringLiteral(".csv")
+                );
+
+        recordingMainFile.setFileName(
+            mainFilePath
+            );
+
+        if (!recordingMainFile.open(
+                QIODevice::WriteOnly
+                | QIODevice::Text
+                | QIODevice::Truncate)) {
+
+            errorMessage =
+                QStringLiteral(
+                    "Die Hauptdatei konnte nicht geöffnet "
+                    "werden:\n%1\n\n%2"
+                    )
+                    .arg(
+                        QDir::toNativeSeparators(
+                            mainFilePath
+                            ),
+                        recordingMainFile.errorString()
+                        );
+
+            activeRecordingBaseName.clear();
+            recordingLidar = false;
+
+            return false;
+        }
+
+        QStringList headerColumns;
+
+        headerColumns.append(
+            QStringLiteral("time_s")
+            );
+
+        if (recordingSteeringActual) {
+            headerColumns.append(
+                QStringLiteral("steering_actual")
+                );
+        }
+
+        if (recordingMotorActual) {
+            headerColumns.append(
+                QStringLiteral("motor_actual")
+                );
+        }
+
+        if (recordingSteeringSetpoint) {
+            headerColumns.append(
+                QStringLiteral("steering_setpoint")
+                );
+        }
+
+        if (recordingMotorSetpoint) {
+            headerColumns.append(
+                QStringLiteral("motor_setpoint")
+                );
+        }
+
+        for (const QString &signalName
+             : recordingDiagnosticSignals) {
+
+            headerColumns.append(signalName);
+        }
+
+        const QByteArray headerLine =
+            (
+                headerColumns.join(
+                    QLatin1Char(';')
+                    )
+                + QLatin1Char('\n')
+                )
+                .toUtf8();
+
+        if (recordingMainFile.write(headerLine)
+            != headerLine.size()) {
+
+            errorMessage =
+                QStringLiteral(
+                    "Die Kopfzeile konnte nicht vollständig "
+                    "in die Hauptdatei geschrieben werden:\n%1"
+                    )
+                    .arg(
+                        recordingMainFile.errorString()
+                        );
+
+            recordingMainFile.close();
+            activeRecordingBaseName.clear();
+            recordingLidar = false;
+
+            return false;
+        }
+
+        recordingMainFile.flush();
+    }
+
+    /*
+     * Separate LiDAR-Datei nur erzeugen, wenn LiDAR
+     * beim Start ausgewählt war.
+     */
+    if (recordingLidar) {
+        const QString lidarFilePath =
+            QDir(recordingDirectory).filePath(
+                activeRecordingBaseName
+                + QStringLiteral("_lidar.csv")
+                );
+
+        recordingLidarFile.setFileName(
+            lidarFilePath
+            );
+
+        if (!recordingLidarFile.open(
+                QIODevice::WriteOnly
+                | QIODevice::Text
+                | QIODevice::Truncate)) {
+
+            errorMessage =
+                QStringLiteral(
+                    "Die LiDAR-Datei konnte nicht geöffnet "
+                    "werden:\n%1\n\n%2"
+                    )
+                    .arg(
+                        QDir::toNativeSeparators(
+                            lidarFilePath
+                            ),
+                        recordingLidarFile.errorString()
+                        );
+
+            /*
+             * Falls die Hauptdatei bereits geöffnet wurde,
+             * diese ebenfalls wieder schließen.
+             */
+            if (recordingMainFile.isOpen()) {
+                recordingMainFile.close();
+            }
+
+            activeRecordingBaseName.clear();
+            recordingLidar = false;
+
+            return false;
+        }
+
+        const QByteArray lidarHeader =
+            QByteArrayLiteral(
+                "time_s;point_index;x_m;y_m\n"
+                );
+
+        if (recordingLidarFile.write(lidarHeader)
+            != lidarHeader.size()) {
+
+            errorMessage =
+                QStringLiteral(
+                    "Die Kopfzeile konnte nicht vollständig "
+                    "in die LiDAR-Datei geschrieben werden:\n%1"
+                    )
+                    .arg(
+                        recordingLidarFile.errorString()
+                        );
+
+            recordingLidarFile.close();
+
+            if (recordingMainFile.isOpen()) {
+                recordingMainFile.close();
+            }
+
+            activeRecordingBaseName.clear();
+            recordingLidar = false;
+
+            return false;
+        }
+
+        recordingLidarFile.flush();
+    }
+
+    return true;
+}
+
+void MainWindow::writeRecordingRow()
+{
+    if (!recordingActive
+        || !recordingMainFile.isOpen()
+        || !recordingElapsedTimer.isValid()
+        || !algorithmRuntime) {
+
+        return;
+    }
+
+    /*
+     * Dezimalzahlen mit Komma schreiben, damit Excel sie
+     * bei deutscher Regionseinstellung korrekt erkennt.
+     *
+     * Die CSV-Spalten werden deshalb weiterhin mit
+     * Semikolon getrennt.
+     */
+    const auto csvDecimal =
+        [](double value,
+           char format = 'g',
+           int precision = 15)
+    {
+        QString text =
+            QString::number(
+                value,
+                format,
+                precision
+                );
+
+        text.replace(
+            QLatin1Char('.'),
+            QLatin1Char(',')
+            );
+
+        return text;
+    };
+
+    QStringList values;
+
+    /*
+     * Relative Zeit seit Beginn der Aufzeichnung.
+     */
+    const double elapsedSeconds =
+        static_cast<double>(
+            recordingElapsedTimer.elapsed()
+            )
+        / 1000.0;
+
+    values.append(
+        csvDecimal(
+            elapsedSeconds,
+            'f',
+            3
+            )
+        );
+
+    /*
+     * Lenkwinkel mit Nachkommastellen schreiben.
+     */
+    if (recordingSteeringActual) {
+        values.append(
+            csvDecimal(
+                steeringActual
+                )
+            );
+    }
+
+    /*
+     * Motor-Istwert ohne Nachkommastellen schreiben.
+     *
+     * Beispiel:
+     * 895.435729980469 wird zu 895.
+     */
+    if (recordingMotorActual) {
+        values.append(
+            QString::number(
+                qRound64(motorActual)
+                )
+            );
+    }
+
+    /*
+     * Sollwerte aus den Algorithmusausgängen lesen.
+     */
+    if (recordingSteeringSetpoint) {
+        double value = 0.0;
+        QString readError;
+
+        if (ui->comboSteeringOut->currentIndex() > 0
+            && algorithmRuntime->readOutputScalar(
+                ui->comboSteeringOut->currentText(),
+                value,
+                readError)) {
+
+            values.append(
+                csvDecimal(value)
+                );
+        } else {
+            values.append(QString());
+        }
+    }
+
+    if (recordingMotorSetpoint) {
+        double value = 0.0;
+        QString readError;
+
+        if (ui->comboMotorOut->currentIndex() > 0
+            && algorithmRuntime->readOutputScalar(
+                ui->comboMotorOut->currentText(),
+                value,
+                readError)) {
+
+            values.append(
+                csvDecimal(value)
+                );
+        } else {
+            values.append(QString());
+        }
+    }
+
+    /*
+     * Ausgewählte Diagnosesignale schreiben.
+     */
+    for (const QString &signalName
+         : recordingDiagnosticSignals) {
+
+        double value = 0.0;
+        QString readError;
+
+        if (algorithmRuntime->readOutputScalar(
+                signalName,
+                value,
+                readError)) {
+
+            values.append(
+                csvDecimal(value)
+                );
+        } else {
+            values.append(QString());
+        }
+    }
+
+    const QByteArray dataLine =
+        (
+            values.join(
+                QLatin1Char(';')
+                )
+            + QLatin1Char('\n')
+            )
+            .toUtf8();
+
+    const qint64 writtenBytes =
+        recordingMainFile.write(dataLine);
+
+    if (writtenBytes != dataLine.size()) {
+        const QString writeError =
+            recordingMainFile.errorString();
+
+        stopRecording();
+
+        QMessageBox::critical(
+            this,
+            QStringLiteral(
+                "Aufzeichnung fehlgeschlagen"
+                ),
+            QStringLiteral(
+                "Die CSV-Daten konnten nicht vollständig "
+                "geschrieben werden:\n%1"
+                )
+                .arg(writeError)
+            );
+
+        return;
+    }
+}
+
+void MainWindow::writeLidarRecording(
+    const QVector<float> &x,
+    const QVector<float> &y)
+{
+    if (!recordingActive
+        || !recordingLidar
+        || !recordingLidarFile.isOpen()
+        || !recordingElapsedTimer.isValid()) {
+
+        return;
+    }
+
+    const qint64 elapsedMilliseconds =
+        recordingElapsedTimer.elapsed();
+
+    /*
+     * Auch LiDAR nur mit der in der Oberfläche
+     * eingestellten Aufzeichnungsfrequenz schreiben.
+     */
+    if (lastLidarRecordingMilliseconds >= 0
+        && elapsedMilliseconds
+                   - lastLidarRecordingMilliseconds
+               < recordingIntervalMilliseconds) {
+
+        return;
+    }
+
+    lastLidarRecordingMilliseconds =
+        elapsedMilliseconds;
+
+    const qsizetype pointCount =
+        std::min(
+            x.size(),
+            y.size()
+            );
+
+    /*
+     * Einen kompletten Scan zunächst im Speicher
+     * zusammensetzen und anschließend gesammelt schreiben.
+     * Das ist deutlich effizienter als ein Schreibvorgang
+     * für jeden einzelnen Punkt.
+     */
+    QByteArray lidarBlock;
+
+    lidarBlock.reserve(
+        static_cast<qsizetype>(
+            pointCount * 50
+            )
+        );
+
+    const QString timeText =
+        QString::number(
+            static_cast<double>(
+                elapsedMilliseconds
+                )
+                / 1000.0,
+            'f',
+            3
+            )
+            .replace(
+                QLatin1Char('.'),
+                QLatin1Char(',')
+                );
+
+    for (qsizetype pointIndex = 0;
+         pointIndex < pointCount;
+         ++pointIndex) {
+
+        const float xValue = x.at(pointIndex);
+        const float yValue = y.at(pointIndex);
+
+        /*
+         * Ungültige Punkte werden nicht aufgezeichnet.
+         */
+        if (!std::isfinite(xValue)
+            || !std::isfinite(yValue)) {
+            continue;
+        }
+
+        QString xText =
+            QString::number(
+                static_cast<double>(xValue),
+                'f',
+                6
+                );
+
+        QString yText =
+            QString::number(
+                static_cast<double>(yValue),
+                'f',
+                6
+                );
+
+        xText.replace(
+            QLatin1Char('.'),
+            QLatin1Char(',')
+            );
+
+        yText.replace(
+            QLatin1Char('.'),
+            QLatin1Char(',')
+            );
+
+        lidarBlock.append(
+            (
+                timeText
+                + QLatin1Char(';')
+                + QString::number(pointIndex)
+                + QLatin1Char(';')
+                + xText
+                + QLatin1Char(';')
+                + yText
+                + QLatin1Char('\n')
+                )
+                .toUtf8()
+            );
+    }
+
+    /*
+     * Ein Scan ohne gültige Punkte erzeugt keine Zeilen.
+     */
+    if (lidarBlock.isEmpty()) {
+        return;
+    }
+
+    const qint64 writtenBytes =
+        recordingLidarFile.write(
+            lidarBlock
+            );
+
+    if (writtenBytes != lidarBlock.size()) {
+        const QString writeError =
+            recordingLidarFile.errorString();
+
+        stopRecording();
+
+        QMessageBox::critical(
+            this,
+            QStringLiteral(
+                "LiDAR-Aufzeichnung fehlgeschlagen"
+                ),
+            QStringLiteral(
+                "Die LiDAR-Daten konnten nicht vollständig "
+                "geschrieben werden:\n%1"
+                )
+                .arg(writeError)
+            );
+    }
+}
+
+void MainWindow::stopRecording()
+{
+    recordingTimer.stop();
+
+    /*
+     * Noch ausstehende Daten an das Betriebssystem
+     * übergeben und die Datei schließen.
+     */
+    if (recordingMainFile.isOpen()) {
+        recordingMainFile.flush();
+        recordingMainFile.close();
+    }
+
+    if (recordingLidarFile.isOpen()) {
+        recordingLidarFile.flush();
+        recordingLidarFile.close();
+    }
+
+    recordingActive = false;
+    recordingLidar = false;
+
+    lastLidarRecordingMilliseconds = -1;
+
+    recordingElapsedTimer.invalidate();
+
+    recordingSteeringActual = false;
+    recordingMotorActual = false;
+    recordingSteeringSetpoint = false;
+    recordingMotorSetpoint = false;
+
+    recordingDiagnosticSignals.clear();
+    activeRecordingBaseName.clear();
 }
 
 void MainWindow::initializeRecordingPage()
@@ -2961,5 +3865,7 @@ void MainWindow::selectAlgorithmPackage()
 
 MainWindow::~MainWindow()
 {
+    stopRecording();
+
     delete ui;
 }

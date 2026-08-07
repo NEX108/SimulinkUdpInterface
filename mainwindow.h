@@ -1,13 +1,17 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include <QElapsedTimer>
+#include <QFile>
+#include <QHash>
 #include <QJsonArray>
 #include <QList>
 #include <QMainWindow>
-#include <QString>
-#include <QElapsedTimer>
-#include <QHash>
 #include <QSet>
+#include <QString>
+#include <QStringList>
+#include <QTimer>
+#include <QVector>
 
 class QComboBox;
 class QLineEdit;
@@ -142,6 +146,21 @@ private:
         bool signalAvailable
         );
 
+    bool startRecording(
+        QString &errorMessage
+        );
+
+    void stopRecording();
+
+    void writeRecordingRow();
+
+    void writeLidarRecording(
+        const QVector<float> &x,
+        const QVector<float> &y
+        );
+
+    QString resolvedRecordingBaseName() const;
+
     Ui::MainWindow *ui;
 
     MonitoringWindow *monitoringWindow = nullptr;
@@ -168,6 +187,33 @@ private:
 
     QHash<QString, bool>
         recordedDiagnosticSelections;
+
+    /*
+ * Zustand der laufenden CSV-Aufzeichnung.
+ */
+    QFile recordingMainFile;
+    QFile recordingLidarFile;
+
+    QTimer recordingTimer;
+    QElapsedTimer recordingElapsedTimer;
+
+    bool recordingActive = false;
+    bool recordingLidar = false;
+
+    QString activeRecordingBaseName;
+
+    int recordingIntervalMilliseconds = 100;
+    qint64 lastLidarRecordingMilliseconds = -1;
+
+    /*
+ * Beim Start eingefrorene Signalauswahl.
+ */
+    bool recordingSteeringActual = false;
+    bool recordingMotorActual = false;
+    bool recordingSteeringSetpoint = false;
+    bool recordingMotorSetpoint = false;
+
+    QStringList recordingDiagnosticSignals;
 };
 
 #endif // MAINWINDOW_H
