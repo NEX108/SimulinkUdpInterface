@@ -14,13 +14,21 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets PrintSupport Ling
 
 set(TS_FILES SimulinkUdpInterface_de_DE.ts)
 
+if(WIN32)
+    enable_language(RC)
+endif()
+
 set(PROJECT_SOURCES
-        main.cpp
-        mainwindow.cpp
-        mainwindow.h
-        mainwindow.ui
-        ${TS_FILES}
+    main.cpp
+    mainwindow.cpp
+    mainwindow.h
+    mainwindow.ui
+    ${TS_FILES}
 )
+
+if(WIN32)
+    list(APPEND PROJECT_SOURCES app.rc)
+endif()
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(SimulinkUdpInterface
@@ -57,6 +65,16 @@ else()
     endif()
 
     qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
+endif()
+
+# QCustomPlot ist unter MinGW sehr groß und kann die normale
+# COFF-Section-Grenze überschreiten.
+if(MINGW)
+    set_source_files_properties(
+        qcustomplot.cpp
+        PROPERTIES
+        COMPILE_OPTIONS "-Wa,-mbig-obj"
+    )
 endif()
 
 target_link_libraries(SimulinkUdpInterface PRIVATE

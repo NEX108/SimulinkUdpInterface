@@ -82,3 +82,9 @@ CMakeLists.txt.user*
 .uic/
 /build*/
 /.qtcreator/
+
+# Windows resource files
+*.aps
+
+# app.rc contains the Windows application icon and is part of the project
+!app.rc
