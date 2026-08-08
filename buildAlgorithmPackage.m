@@ -1,7 +1,7 @@
 function manifestPath = buildAlgorithmPackage(modelName)
 %BUILDALGORITHMPACKAGE Baut ein Simulink-Modell und erstellt ein Paket.
 %
-% Stand: 26.07.2026
+% Stand: 08.08.2026
 %
 % Das erzeugte Algorithmuspaket enthält die kompilierte Bibliothek,
 % die benötigten Headerdateien und eine maschinenlesbare Beschreibung
@@ -45,6 +45,22 @@ function manifestPath = buildAlgorithmPackage(modelName)
             "buildAlgorithmPackage:EmptyModelName", ...
             "Es wurde kein Modellname angegeben.");
     end
+
+    %% Modell für Konfigurationsinformationen laden
+    modelWasAlreadyLoaded = bdIsLoaded(modelName);
+
+    if ~modelWasAlreadyLoaded
+        load_system(modelName);
+    end
+
+    modelCleanup = onCleanup(@() closeModelIfOpenedHere( ...
+        modelName, ...
+        modelWasAlreadyLoaded)); %#ok<NASGU>
+
+    %% Build-Konfiguration vor dem Build speichern
+    systemTargetFile = string(get_param( ...
+        modelName, ...
+        "SystemTargetFile"));
 
     fprintf("Baue Modell: %s\n", modelName);
 
@@ -165,7 +181,7 @@ function manifestPath = buildAlgorithmPackage(modelName)
 
     manifest.build = struct( ...
         "matlabRelease", string(version("-release")), ...
-        "systemTargetFile", string(get_param(modelName, "SystemTargetFile")));
+        "systemTargetFile", systemTargetFile);
 
     manifest.headers = headerFiles;
 
@@ -586,7 +602,19 @@ function libraryPath = findGeneratedLibrary( ...
 
     elseif ispc
 
-        libraryNames = modelName + ".dll";
+        % ert_shrlib erzeugt unter Windows typischerweise einen
+        % plattformspezifischen Namen, z. B.
+        %
+        %   C_Notbremsung_win64.dll
+        %
+        % Der Name ohne Architektursuffix wird zusätzlich als
+        % Fallback unterstützt.
+        matlabArchitecture = string(computer("arch"));
+
+        libraryNames = [
+            modelName + "_" + matlabArchitecture + ".dll"
+            modelName + ".dll"
+        ];
 
     else
 
@@ -921,91 +949,253 @@ function sourcePath = generateLayoutProbeSource(modelName, layout, sourcePath)
     fprintf(fileId, "%s\n", char(strjoin(lines, newline)));
 end
 
-
 function compiledLayout = compileAndRunLayoutProbe( ...
     modelName, sourcePath, buildDirectory, buildParentDirectory)
 %COMPILEANDRUNLAYOUTPROBE Kompiliert und startet das C-Prüfprogramm.
+%
+% Unterstützte Plattformen:
+%
+%   macOS:
+%       Apple Clang über xcrun
+%
+%   Windows:
+%       Microsoft Visual C++ (cl.exe)
+%
+% Das Prüfprogramm verwendet exakt die vom generierten Modell verwendeten
+% C-Strukturen und ermittelt dadurch deren tatsächliches Speicherlayout.
 
-    if ~ismac
-        error( ...
-            "buildAlgorithmPackage:UnsupportedProbePlatform", ...
-            "Die integrierte Layout-Ermittlung ist derzeit für macOS implementiert.");
-    end
+    modelName = string(modelName);
+    sourcePath = string(sourcePath);
+    buildDirectory = string(buildDirectory);
+    buildParentDirectory = string(buildParentDirectory);
 
+    %% Generierten Modell-Header finden
     modelHeaderPath = findGeneratedHeader( ...
         modelName + ".h", ...
         buildDirectory);
 
     fprintf("\nVerwendeter Modell-Header:\n%s\n", modelHeaderPath);
 
+    %% Benötigte Include-Verzeichnisse sammeln
     includeDirectories = collectIncludeDirectories( ...
         buildDirectory, ...
         buildParentDirectory, ...
         string(fileparts(modelHeaderPath)));
 
-    [sdkStatus, sdkOutput] = system( ...
-        "xcrun --sdk macosx --show-sdk-path");
-    sdkPath = strtrim(string(sdkOutput));
+    %% Plattformabhängig kompilieren
+    if ismac
 
-    if sdkStatus ~= 0 || strlength(sdkPath) == 0
-        error( ...
-            "buildAlgorithmPackage:SdkNotFound", ...
-            "Das macOS SDK konnte über xcrun nicht gefunden werden.");
-    end
+        %% -------------------------------------------------------------
+        %  macOS: Apple Clang
+        % --------------------------------------------------------------
 
-    [clangStatus, clangOutput] = system( ...
-        "xcrun --sdk macosx --find clang");
-    clangPath = strtrim(string(clangOutput));
+        [sdkStatus, sdkOutput] = system( ...
+            "xcrun --sdk macosx --show-sdk-path");
 
-    if clangStatus ~= 0 || strlength(clangPath) == 0
-        error( ...
-            "buildAlgorithmPackage:ClangNotFound", ...
-            "Apple Clang konnte über xcrun nicht gefunden werden.");
-    end
+        sdkPath = strtrim(string(sdkOutput));
 
-    fprintf("\nC-Compiler:\n%s\n", clangPath);
-    fprintf("\nmacOS SDK:\n%s\n", sdkPath);
+        if sdkStatus ~= 0 || strlength(sdkPath) == 0
+            error( ...
+                "buildAlgorithmPackage:SdkNotFound", ...
+                "Das macOS SDK konnte über xcrun nicht gefunden werden.");
+        end
 
-    executablePath = string(tempname) + "_layout_probe";
-    executableCleanup = onCleanup( ...
-        @() deleteIfExisting(executablePath)); %#ok<NASGU>
+        [clangStatus, clangOutput] = system( ...
+            "xcrun --sdk macosx --find clang");
 
-    commandParts = strings(0, 1);
-    commandParts(end + 1) = shellQuote(clangPath);
-    commandParts(end + 1) = "-std=c11";
-    commandParts(end + 1) = "-Wall";
-    commandParts(end + 1) = "-Wextra";
-    commandParts(end + 1) = "-isysroot";
-    commandParts(end + 1) = shellQuote(sdkPath);
+        clangPath = strtrim(string(clangOutput));
 
-    for index = 1:numel(includeDirectories)
+        if clangStatus ~= 0 || strlength(clangPath) == 0
+            error( ...
+                "buildAlgorithmPackage:ClangNotFound", ...
+                "Apple Clang konnte über xcrun nicht gefunden werden.");
+        end
+
+        fprintf("\nC-Compiler:\n%s\n", clangPath);
+        fprintf("\nmacOS SDK:\n%s\n", sdkPath);
+
+        executablePath = ...
+            string(tempname) + "_layout_probe";
+
+        executableCleanup = onCleanup( ...
+            @() deleteIfExisting(executablePath)); %#ok<NASGU>
+
+        commandParts = strings(0, 1);
+
+        commandParts(end + 1) = shellQuote(clangPath);
+        commandParts(end + 1) = "-std=c11";
+        commandParts(end + 1) = "-Wall";
+        commandParts(end + 1) = "-Wextra";
+        commandParts(end + 1) = "-isysroot";
+        commandParts(end + 1) = shellQuote(sdkPath);
+
+        for index = 1:numel(includeDirectories)
+
+            commandParts(end + 1) = ...
+                "-I" + shellQuote(includeDirectories(index));
+
+        end
+
+        commandParts(end + 1) = shellQuote(sourcePath);
+        commandParts(end + 1) = "-o";
+        commandParts(end + 1) = shellQuote(executablePath);
+
+        compileCommand = strjoin(commandParts, " ");
+
+        fprintf("\nLayout-Prüfprogramm wird kompiliert ...\n");
+
+        [compileStatus, compileOutput] = ...
+            system(compileCommand);
+
+        if compileStatus ~= 0
+            error( ...
+                "buildAlgorithmPackage:ProbeCompilationFailed", ...
+                ["Die Layout-Prüfung konnte nicht kompiliert werden.\n\n" ...
+                 "Compiler-Ausgabe:\n%s\n\nCompilerbefehl:\n%s"], ...
+                compileOutput, ...
+                compileCommand);
+        end
+
+        fprintf("Kompilierung erfolgreich.\n");
+        fprintf("\nLayout-Prüfprogramm wird ausgeführt ...\n");
+
+        [runStatus, runOutput] = ...
+            system(shellQuote(executablePath));
+
+
+    elseif ispc
+
+        %% -------------------------------------------------------------
+        %  Windows: Microsoft Visual C++
+        % --------------------------------------------------------------
+
+        executablePath = ...
+            string(tempname) + "_layout_probe.exe";
+
+        objectPath = ...
+            string(tempname) + "_layout_probe.obj";
+
+        executableCleanup = onCleanup( ...
+            @() deleteIfExisting(executablePath)); %#ok<NASGU>
+
+        objectCleanup = onCleanup( ...
+            @() deleteIfExisting(objectPath)); %#ok<NASGU>
+
+        %% Prüfen, ob cl.exe bereits verfügbar ist
+        [compilerStatus, compilerOutput] = ...
+            system("where cl");
+
+        compilerAvailable = ...
+            compilerStatus == 0 && ...
+            strlength(strtrim(string(compilerOutput))) > 0;
+
+        setupScript = fullfile( ...
+            buildDirectory, ...
+            "setup_msvc.bat");
+
+        if compilerAvailable
+
+            compilerPaths = splitlines( ...
+                strtrim(string(compilerOutput)));
+
+            compilerPath = compilerPaths(1);
+
+            fprintf("\nC-Compiler:\n%s\n", compilerPath);
+
+        elseif isfile(setupScript)
+
+            % Simulink erzeugt für den verwendeten MSVC-Toolchain-Build
+            % ein Setup-Skript. Dieses kann verwendet werden, wenn
+            % cl.exe nicht direkt im MATLAB-Prozesspfad verfügbar ist.
+            fprintf( ...
+                "\nMSVC-Umgebung wird über folgendes Skript geladen:\n%s\n", ...
+                setupScript);
+
+        else
+
+            error( ...
+                "buildAlgorithmPackage:MsvcNotFound", ...
+                ["Microsoft Visual C++ wurde zwar für den Simulink-Build " ...
+                 "verwendet, cl.exe ist für die Layout-Prüfung jedoch " ...
+                 "nicht verfügbar.\n\n" ...
+                 "Bitte prüfen Sie die MATLAB-Compilerkonfiguration mit:\n" ...
+                 "mex -setup C"]);
+        end
+
+        %% cl-Befehl aufbauen
+        commandParts = strings(0, 1);
+
+        commandParts(end + 1) = "cl";
+        commandParts(end + 1) = "/nologo";
+
+        % Quelldatei explizit als C und nicht als C++ behandeln.
+        commandParts(end + 1) = "/TC";
+
+        % Hohe Warnstufe; Warnungen bleiben erlaubt.
+        commandParts(end + 1) = "/W4";
+
+        for index = 1:numel(includeDirectories)
+
+            commandParts(end + 1) = ...
+                "/I" + windowsCmdQuote(includeDirectories(index));
+
+        end
+
         commandParts(end + 1) = ...
-            "-I" + shellQuote(includeDirectories(index));
-    end
+            windowsCmdQuote(sourcePath);
 
-    commandParts(end + 1) = shellQuote(sourcePath);
-    commandParts(end + 1) = "-o";
-    commandParts(end + 1) = shellQuote(executablePath);
+        commandParts(end + 1) = ...
+            "/Fo" + windowsCmdQuote(objectPath);
 
-    compileCommand = strjoin(commandParts, " ");
+        commandParts(end + 1) = ...
+            "/Fe" + windowsCmdQuote(executablePath);
 
-    fprintf("\nLayout-Prüfprogramm wird kompiliert ...\n");
-    [compileStatus, compileOutput] = system(compileCommand);
+        baseCompileCommand = ...
+            strjoin(commandParts, " ");
 
-    if compileStatus ~= 0
+        %% Falls cl.exe nicht direkt verfügbar ist, zuerst MSVC-Setup laden
+        if compilerAvailable
+
+            compileCommand = baseCompileCommand;
+
+        else
+
+            compileCommand = ...
+                "call " + windowsCmdQuote(setupScript) + ...
+                " && " + baseCompileCommand;
+
+        end
+
+        fprintf("\nLayout-Prüfprogramm wird kompiliert ...\n");
+
+        [compileStatus, compileOutput] = ...
+            system(compileCommand);
+
+        if compileStatus ~= 0
+            error( ...
+                "buildAlgorithmPackage:ProbeCompilationFailed", ...
+                ["Die Layout-Prüfung konnte unter Windows nicht " ...
+                 "kompiliert werden.\n\n" ...
+                 "Compiler-Ausgabe:\n%s\n\nCompilerbefehl:\n%s"], ...
+                compileOutput, ...
+                compileCommand);
+        end
+
+        fprintf("Kompilierung erfolgreich.\n");
+        fprintf("\nLayout-Prüfprogramm wird ausgeführt ...\n");
+
+        [runStatus, runOutput] = ...
+            system(windowsCmdQuote(executablePath));
+
+
+    else
+
         error( ...
-            "buildAlgorithmPackage:ProbeCompilationFailed", ...
-            ["Die Layout-Prüfung konnte nicht kompiliert werden.\n\n" ...
-             "Compiler-Ausgabe:\n%s\n\nCompilerbefehl:\n%s"], ...
-            compileOutput, ...
-            compileCommand);
+            "buildAlgorithmPackage:UnsupportedProbePlatform", ...
+            "Die integrierte Layout-Ermittlung unterstützt derzeit macOS und Windows.");
     end
 
-    fprintf("Kompilierung erfolgreich.\n");
-    fprintf("\nLayout-Prüfprogramm wird ausgeführt ...\n");
-
-    [runStatus, runOutput] = system(shellQuote(executablePath));
-
+    %% Ausführung prüfen
     if runStatus ~= 0
         error( ...
             "buildAlgorithmPackage:ProbeExecutionFailed", ...
@@ -1013,13 +1203,15 @@ function compiledLayout = compileAndRunLayoutProbe( ...
             runOutput);
     end
 
-    compiledLayout = parseLayoutProbeOutput(string(runOutput));
+    %% Ausgabe auswerten
+    compiledLayout = ...
+        parseLayoutProbeOutput(string(runOutput));
+
     validateCompiledLayout(compiledLayout);
 
     fprintf("\nErmitteltes Speicherlayout:\n");
     disp(compiledLayout);
 end
-
 
 function includeDirectories = collectIncludeDirectories( ...
     buildDirectory, buildParentDirectory, modelHeaderDirectory)
@@ -1161,6 +1353,22 @@ function quotedValue = shellQuote(value)
     quotedValue = '"' + string(value) + '"';
 end
 
+function quotedValue = windowsCmdQuote(value)
+%WINDOWSCMDQUOTE Setzt einen Pfad sicher in Anführungszeichen für cmd.exe.
+%
+% Windows-Pfade dürfen ihre Backslashes unverändert behalten.
+
+value = string(value);
+
+if contains(value, '"')
+    error( ...
+        "buildAlgorithmPackage:InvalidWindowsPath", ...
+        "Ein Windows-Pfad enthält ein doppeltes Anführungszeichen: %s", ...
+        value);
+end
+
+quotedValue = '"' + value + '"';
+end
 
 function deleteIfExisting(filePath)
 %DELETEIFEXISTING Löscht eine temporäre Datei.
@@ -1168,4 +1376,12 @@ function deleteIfExisting(filePath)
     if isfile(filePath)
         delete(filePath);
     end
+end
+
+function closeModelIfOpenedHere(modelName, modelWasAlreadyLoaded)
+%CLOSEMODELIFOPENEDHERE Schließt nur Modelle, die dieses Skript geladen hat.
+
+if ~modelWasAlreadyLoaded && bdIsLoaded(modelName)
+    close_system(modelName, 0);
+end
 end
